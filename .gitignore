@@ -1,0 +1,16 @@
+# Elixir / Mix
+/_build/
+/deps/
+/cover/
+/doc/
+/.fetch
+erl_crash.dump
+*.ez
+*.beam
+/.elixir_ls/
+
+# escript output
+/vzbeam
+
+# SDD scratch (progress ledger, briefs, reports)
+/.superpowers/
