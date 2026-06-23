@@ -7,7 +7,7 @@ defmodule VzBeam.Commands.Ip do
 
   @spec run([String.t()], (-> String.t())) :: {:ok, iodata} | {:error, non_neg_integer, iodata}
   def run([name], read_leases) do
-    with {:ok, %{"macAddress" => mac}} <- Manifest.read(name),
+    with {:ok, %{"macAddress" => mac}} when is_binary(mac) <- Manifest.read(name),
          ip when is_binary(ip) <- Leases.lookup_ip(read_leases.(), mac) do
       {:ok, [ip, "\n"]}
     else

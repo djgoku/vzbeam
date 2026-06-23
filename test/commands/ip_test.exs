@@ -30,4 +30,12 @@ defmodule VzBeam.Commands.IpTest do
   test "errors on missing argument" do
     assert {:error, 2, _} = VzBeam.Commands.Ip.run([])
   end
+
+  test "errors gracefully when macAddress is null" do
+    home = System.get_env("VZBEAM_HOME")
+    File.write!(Path.join([home, "base", "config.json"]),
+      Jason.encode!(%{"name" => "base", "macAddress" => nil}))
+    assert {:error, 1, msg} = VzBeam.Commands.Ip.run(["base"], fn -> "" end)
+    assert IO.iodata_to_binary(msg) =~ "no macAddress"
+  end
 end
