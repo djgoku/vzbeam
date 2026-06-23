@@ -1,0 +1,16 @@
+defmodule VzBeam.AtomicFileTest do
+  use ExUnit.Case, async: false
+
+  setup do
+    dir = Path.join(System.tmp_dir!(), "vzbeam-af-#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf!(dir) end)
+    {:ok, dir: dir}
+  end
+
+  test "creates parent dirs, writes the file, leaves no temp", %{dir: dir} do
+    target = Path.join([dir, "a", "b", "config.json"])
+    assert :ok = VzBeam.AtomicFile.write(target, "hello")
+    assert File.read!(target) == "hello"
+    assert File.ls!(Path.join([dir, "a", "b"])) == ["config.json"]
+  end
+end
