@@ -3,7 +3,7 @@ defmodule VzBeam.Commands.Ip do
   alias VzBeam.{Manifest, Leases}
 
   @spec run([String.t()]) :: {:ok, iodata} | {:error, non_neg_integer, iodata}
-  def run(args), do: run(args, &read_leases/0)
+  def run(args), do: run(args, &VzBeam.Leases.read/0)
 
   @spec run([String.t()], (-> String.t())) :: {:ok, iodata} | {:error, non_neg_integer, iodata}
   def run([name], read_leases) do
@@ -18,8 +18,4 @@ defmodule VzBeam.Commands.Ip do
   end
 
   def run(_, _), do: {:error, 2, "usage: vzbeam ip <name>\n"}
-
-  defp read_leases do
-    case File.read(Leases.path()), do: ({:ok, c} -> c; _ -> "")
-  end
 end

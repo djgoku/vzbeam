@@ -4,6 +4,14 @@ defmodule VzBeam.Leases do
   @spec path() :: Path.t()
   def path, do: "/var/db/dhcpd_leases"
 
+  @spec read() :: String.t()
+  def read do
+    case File.read(path()) do
+      {:ok, content} -> content
+      _ -> ""
+    end
+  end
+
   @spec parse(String.t()) :: [%{mac: String.t(), ip: String.t() | nil, name: String.t() | nil}]
   def parse(content) do
     content
