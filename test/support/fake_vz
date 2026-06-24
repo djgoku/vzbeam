@@ -3,6 +3,20 @@ case "$1" in
   --version)   echo '{"type":"version","protocol":1}'; exit 0 ;;
   image-info)  echo '{"type":"image","version":"26.5.1","build":"25F80","url":"file:///x.ipsw","source":"latest"}'; exit 0 ;;
   reid)        echo '{"type":"reid","machineIdentifier":"NEW-ID","macAddress":"5e:11:22:33:44:55"}'; exit 0 ;;
+  restore)
+    echo '{"type":"progress","fraction":0.5}'
+    echo '{"type":"restored","machineIdentifier":"RID","hardwareModel":"HW","macAddress":"5e:ab:cd:ef:00:11","version":"26.5.1","build":"25F80"}'
+    exit 0 ;;
+  run)
+    # modes via env VZBEAM_FAKE_RUN: started (default) | started_exit | error | hang
+    case "${VZBEAM_FAKE_RUN:-started}" in
+      error)        echo '{"type":"error","domain":"VZErrorDomain","code":6,"message":"max VMs"}'; exit 6 ;;
+      started_exit) echo "{\"type\":\"started\",\"pid\":$$}"; exit 0 ;;
+      hang)         while true; do sleep 1; done ;;
+      *)            trap 'echo "{\"type\":\"guest_stopped\"}"; exit 0' TERM
+                    echo "{\"type\":\"started\",\"pid\":$$}"
+                    while true; do sleep 1; done ;;
+    esac ;;
   errorcase)   echo '{"type":"error","domain":"VZErrorDomain","code":6,"message":"max VMs"}'; exit 3 ;;
   *)           echo "fake_vz: unknown $1" 1>&2; exit 2 ;;
 esac

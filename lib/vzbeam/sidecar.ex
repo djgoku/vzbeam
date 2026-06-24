@@ -1,8 +1,9 @@
 defmodule VzBeam.Sidecar do
   @moduledoc "Locate, version-check, and invoke the Swift `vz` sidecar."
-  alias VzBeam.{Home, Protocol}
+  alias VzBeam.{Home, Protocol, Shell}
 
   @protocol_version 1
+  @line_max 1_048_576
   @terminals %{"image-info" => ["image"], "restore" => ["restored"],
                "reid" => ["reid"], "--version" => ["version"]}
 
@@ -73,16 +74,73 @@ defmodule VzBeam.Sidecar do
     end
   end
 
-  @spec restore(map, fun) :: {:ok, map} | {:error, term}
-  def restore(opts, runner \\ &System.cmd/3) do
+  @spec stream(String.t(), [String.t()], (Protocol.event() -> any)) :: {:ok, [Protocol.event()]} | {:error, term}
+  def stream(subcommand, args, on_event \\ fn _ -> :ok end) do
+    with {:ok, path} <- locate() do
+      stderr = Path.join(System.tmp_dir!(), "vz-stderr-#{System.unique_integer([:positive])}")
+      cmd = "#{Shell.join([path, subcommand | args])} 2>#{Shell.quote_arg(stderr)}"
+      port = Port.open({:spawn_executable, "/bin/sh"}, [:binary, :exit_status, {:line, @line_max}, args: ["-c", cmd]])
+
+      {events, status} = collect_stream(port, on_event, [])
+      tail = stderr_tail(stderr)
+      File.rm(stderr)
+      resolve(events, subcommand, status, tail)
+    end
+  end
+
+  @spec restore(map, (Protocol.event() -> any)) :: {:ok, map} | {:error, term}
+  def restore(opts, on_event \\ fn _ -> :ok end) do
     args = ["--ipsw", opts.ipsw, "--disk", opts.disk, "--aux", opts.aux,
             "--disk-size", to_string(opts.disk_size),
             "--cpu", to_string(opts.cpu), "--mem", to_string(opts.mem)]
 
-    with {:ok, events} <- call("restore", args, runner),
+    with {:ok, events} <- stream("restore", args, on_event),
          {:event, "restored", m} <- find(events, "restored") do
       {:ok, %{machine_identifier: m["machineIdentifier"], hardware_model: m["hardwareModel"],
               mac_address: m["macAddress"], version: m["version"], build: m["build"]}}
+    end
+  end
+
+  defp collect_stream(port, on_event, acc) do
+    receive do
+      {^port, {:data, {:eol, line}}} ->
+        case Protocol.decode_line(line) do
+          {:event, _, _} = ev -> on_event.(ev); collect_stream(port, on_event, [ev | acc])
+          {:error, _} -> collect_stream(port, on_event, acc)
+        end
+
+      {^port, {:data, {:noeol, _partial}}} ->
+        collect_stream(port, on_event, acc)
+
+      {^port, {:exit_status, status}} ->
+        {Enum.reverse(acc), status}
+    end
+  end
+
+  defp resolve(events, subcommand, status, stderr_tail) do
+    error = Enum.find(events, &match?({:event, "error", _}, &1))
+    terminal = Enum.find(events, fn {:event, t, _} -> t in Map.get(@terminals, subcommand, []) end)
+
+    cond do
+      error ->
+        {:event, "error", m} = error
+        {:error, {:vz, m["domain"], m["code"], m["message"]}}
+
+      status != 0 ->
+        {:error, {:exit, status, stderr_tail}}
+
+      terminal ->
+        {:ok, events}
+
+      true ->
+        {:error, :no_terminal}
+    end
+  end
+
+  defp stderr_tail(path) do
+    case File.read(path) do
+      {:ok, body} -> body |> String.slice(-4096, 4096) |> to_string()
+      _ -> ""
     end
   end
 

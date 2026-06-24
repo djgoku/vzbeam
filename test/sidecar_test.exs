@@ -49,4 +49,23 @@ defmodule VzBeam.SidecarTest do
     runner = fn _p, _a, _ -> {~s({"type":"image","version":"26","build":"X","url":"u","source":"s"}\n), 1} end
     assert {:error, {:exit, 1}} = VzBeam.Sidecar.image_info("latest", runner)
   end
+
+  test "stream/4 yields progress events then the restored terminal (real Port + fake_vz)" do
+    parent = self()
+
+    assert {:ok, events} =
+             Sidecar.stream(
+               "restore",
+               ~w(--ipsw x --disk d --aux a --disk-size 1 --cpu 1 --mem 1),
+               fn ev -> send(parent, {:ev, ev}) end
+             )
+
+    assert Enum.any?(events, &match?({:event, "restored", _}, &1))
+    assert_received {:ev, {:event, "progress", %{"fraction" => 0.5}}}
+  end
+
+  test "restore/1 returns the restored identity over the stream transport" do
+    assert {:ok, %{machine_identifier: "RID", build: "25F80", version: "26.5.1"}} =
+             Sidecar.restore(%{ipsw: "x", disk: "d", aux: "a", disk_size: 1, cpu: 1, mem: 1})
+  end
 end
