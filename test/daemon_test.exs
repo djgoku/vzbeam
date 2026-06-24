@@ -18,8 +18,10 @@ defmodule VzBeam.DaemonTest do
     log = Path.join([dir, "sub dir", "run.log"])  # spaces in the path exercise quoting
     File.mkdir_p!(Path.dirname(log))
 
-    assert {:ok, pid} =
-             VzBeam.Daemon.spawn_detached(["/bin/sh", "-c", "echo hello; sleep 30"], log)
+    {:ok, pid} =
+      VzBeam.Daemon.spawn_detached(["/bin/sh", "-c", "echo hello; sleep 30"], log)
+
+    on_exit(fn -> System.cmd("kill", ["-TERM", Integer.to_string(pid)], stderr_to_stdout: true) end)
 
     assert is_integer(pid)
     Process.sleep(300)
@@ -27,7 +29,5 @@ defmodule VzBeam.DaemonTest do
     assert {_, 0} = System.cmd("ps", ["-p", Integer.to_string(pid)], stderr_to_stdout: true)
     {ppid, 0} = System.cmd("ps", ["-o", "ppid=", "-p", Integer.to_string(pid)])
     assert String.trim(ppid) == "1"  # reparented to launchd => survives BEAM exit
-  after
-    System.cmd("sh", ["-c", "pkill -f 'sleep 30' 2>/dev/null; true"])
   end
 end
