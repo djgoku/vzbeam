@@ -12,6 +12,10 @@ defmodule VzBeam.CLI do
     new <name> <base>  clone a stopped base (CoW)
     new <name> --image <latest|PATH>  restore a fresh base
     rm <name>          delete a stopped bundle
+    run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]  boot a VM (detached)
+    stop <name>        graceful guest shutdown over SSH
+    kill <name>        force power-off (SIGTERM, then SIGKILL)
+    ssh <name> [-- cmd…]  ssh into a VM (interactive or one-shot)
   """
 
   @spec main([String.t()]) :: no_return
@@ -32,5 +36,9 @@ defmodule VzBeam.CLI do
   def run(["images" | rest]), do: VzBeam.Commands.Images.run(rest)
   def run(["new" | rest]), do: VzBeam.Commands.New.run(rest)
   def run(["rm" | rest]), do: VzBeam.Commands.Rm.run(rest)
+  def run(["run" | rest]), do: VzBeam.Commands.Run.run(rest)
+  def run(["stop" | rest]), do: VzBeam.Commands.Stop.run(rest)
+  def run(["kill" | rest]), do: VzBeam.Commands.Kill.run(rest)
+  def run(["ssh" | rest]), do: VzBeam.Commands.Ssh.run(rest)
   def run([verb | _]), do: {:error, 2, ["unknown command: ", verb, "\n", @usage]}
 end
