@@ -19,16 +19,20 @@ defmodule VzBeam.Pidfile do
     end
   end
 
-  @spec write(String.t(), String.t() | integer) :: :ok | {:error, term}
+  @spec write(String.t(), integer | binary) :: :ok | {:error, atom}
   def write(name, os_pid) do
-    with {:ok, started} <- process_start(os_pid) do
-      atomic_write(path(name), Jason.encode!(%{
-        "pid" => to_string(os_pid),
-        "startedAt" => started,
-        "bundle" => name
-      }))
+    pid = to_pid_integer(os_pid)
+
+    with {:ok, started} <- process_start(pid),
+         :ok <-
+           VzBeam.AtomicFile.write(
+             path(name),
+             Jason.encode!(%{"pid" => pid, "startedAt" => started, "bundle" => name})
+           ) do
+      :ok
     else
       :error -> {:error, :process_not_found}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -47,13 +51,6 @@ defmodule VzBeam.Pidfile do
     end
   end
 
-  defp atomic_write(target, body) do
-    tmp = target <> ".tmp.#{System.unique_integer([:positive])}"
-
-    with :ok <- File.write(tmp, body), :ok <- File.rename(tmp, target) do
-      :ok
-    else
-      err -> File.rm(tmp); err
-    end
-  end
+  defp to_pid_integer(p) when is_integer(p), do: p
+  defp to_pid_integer(p) when is_binary(p), do: String.to_integer(p)
 end

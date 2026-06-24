@@ -23,4 +23,16 @@ defmodule VzBeam.HomeTest do
   after
     System.delete_env("VZBEAM_HOME")
   end
+
+  test "bundles excludes *.pending dirs" do
+    home = Path.join(System.tmp_dir!(), "vzbeam-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(Path.join(home, "base"))
+    File.write!(Path.join([home, "base", "config.json"]), "{}")
+    File.mkdir_p!(Path.join(home, "half.pending"))
+    File.write!(Path.join([home, "half.pending", "config.json"]), "{}")
+    System.put_env("VZBEAM_HOME", home)
+    assert VzBeam.Home.bundles() == ["base"]
+  after
+    System.delete_env("VZBEAM_HOME")
+  end
 end

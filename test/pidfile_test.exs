@@ -29,4 +29,10 @@ defmodule VzBeam.PidfileTest do
   test "running? is false when there is no pidfile" do
     refute VzBeam.Pidfile.running?("vm")
   end
+
+  test "stores pid as an integer" do
+    :ok = VzBeam.Pidfile.write("vm", System.pid())
+    {:ok, m} = VzBeam.Pidfile.read("vm")
+    assert is_integer(m["pid"])
+  end
 end

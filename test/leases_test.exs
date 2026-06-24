@@ -24,4 +24,9 @@ defmodule VzBeam.LeasesTest do
     assert VzBeam.Leases.lookup_ip(@sample, "5E:AA:BB:CC:DD:EE") == "192.168.64.7"
     assert VzBeam.Leases.lookup_ip(@sample, "00:00:00:00:00:00") == nil
   end
+
+  test "read/0 returns \"\" when the leases file is absent" do
+    # default path won't exist in CI sandbox; must not raise
+    assert is_binary(VzBeam.Leases.read())
+  end
 end

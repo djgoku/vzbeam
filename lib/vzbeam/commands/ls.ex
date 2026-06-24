@@ -5,13 +5,13 @@ defmodule VzBeam.Commands.Ls do
   @header ["NAME", "STATUS", "BASE", "OS", "IP", "CPU", "MEM", "DISK"]
 
   @spec run([String.t()]) :: {:ok, iodata}
-  def run(args), do: run(args, &read_leases/0)
+  def run(args), do: run(args, &VzBeam.Leases.read/0)
 
   @spec run([String.t()], (-> String.t())) :: {:ok, iodata}
   def run(_args, read_leases) do
     leases = read_leases.()
     rows = Enum.map(Home.bundles(), &row(&1, leases))
-    {:ok, render([@header | rows])}
+    {:ok, VzBeam.Table.render([@header | rows])}
   end
 
   defp row(name, leases) do
@@ -37,24 +37,6 @@ defmodule VzBeam.Commands.Ls do
 
   defp ip(_, _), do: "-"
 
-  defp mem(bytes) when is_integer(bytes), do: "#{div(bytes, 1024 * 1024 * 1024)}G"
+  defp mem(bytes) when is_number(bytes), do: "#{trunc(bytes / (1024 * 1024 * 1024))}G"
   defp mem(_), do: "-"
-
-  defp render(rows) do
-    widths =
-      rows
-      |> Enum.zip()
-      |> Enum.map(fn col -> col |> Tuple.to_list() |> Enum.map(&String.length/1) |> Enum.max() end)
-
-    Enum.map(rows, fn cols ->
-      cols
-      |> Enum.zip(widths)
-      |> Enum.map(fn {c, w} -> String.pad_trailing(c, w + 2) end)
-      |> then(&[&1, "\n"])
-    end)
-  end
-
-  defp read_leases do
-    case File.read(Leases.path()), do: ({:ok, c} -> c; _ -> "")
-  end
 end
