@@ -47,10 +47,9 @@ defmodule VzBeam.Cache do
 
   defp acquire(spec, info, final, deps) do
     pending = "#{final}.#{System.unique_integer([:positive])}.pending"
-    acquire = if spec == "latest", do: deps.download.(info.url, pending), else: deps.copy.(spec, pending)
 
     with :ok <- File.mkdir_p(dir()),
-         :ok <- acquire,
+         :ok <- fetch_bytes(spec, info, pending, deps),
          :ok <- size_sane(pending),
          :ok <- File.rename(pending, final),
          {:ok, entry} <- put_index(info, final) do
@@ -59,6 +58,10 @@ defmodule VzBeam.Cache do
       err -> File.rm(pending); err
     end
   end
+
+  # Invoked INSIDE the with chain (after mkdir_p) so the cache dir exists before cp/curl writes.
+  defp fetch_bytes("latest", info, pending, deps), do: deps.download.(info.url, pending)
+  defp fetch_bytes(spec, _info, pending, deps), do: deps.copy.(spec, pending)
 
   defp put_index(info, final) do
     with {:ok, stat} <- File.stat(final) do
