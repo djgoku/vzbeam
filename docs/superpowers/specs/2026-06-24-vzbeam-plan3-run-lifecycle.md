@@ -108,25 +108,29 @@ Run on this host (macOS 26.5.1, Elixir 1.20.1 / OTP 29), throwaway non-mutating 
 (not within one BEAM). Auto-recovers from a crashed holder.
 
 ```
-@spec with_lock((-> result), timeout_ms :: pos_integer) :: {:ok, result} | {:error, :lock_timeout}
-@spec acquire(timeout_ms) :: :ok | {:error, :lock_timeout}
+@spec with_lock((-> result), timeout_ms :: pos_integer) :: {:ok, result} | {:error, :lock_timeout | :lock_corrupt}
+@spec acquire(timeout_ms) :: :ok | {:error, :lock_timeout | :lock_corrupt}
 @spec release() :: :ok
 path() :: Path.t()              # $VZBEAM_HOME/run.lock
 ```
 
 **`acquire/1`** loops until a deadline:
-1. Build the holder record `Jason.encode!(%{"pid" => os_pid, "startedAt" => start})` where `os_pid =
-   System.pid()` (the BEAM's OS pid) and `start = Pidfile.process_start(os_pid)` (reused, start-time
-   match defeats PID reuse).
+1. `File.mkdir_p(Home.root())` — a fresh `$VZBEAM_HOME` has no directory yet, so the temp write would
+   `:enoent` before any contention logic (Codex #6). Build the holder record:
+   `with {:ok, start} <- Pidfile.process_start(os_pid)` — `process_start/1` returns `{:ok, ts} | :error`,
+   **not** a bare value (Codex #1) — where `os_pid = System.pid()`; then `Jason.encode!(%{"pid" =>
+   os_pid, "startedAt" => start})`. The start-time match defeats PID reuse. (`process_start` on our own
+   live pid effectively never fails; a `:error` surfaces as a typed error rather than encoding a tuple.)
 2. Write it to a unique temp `run.lock.<pid>.<unique>.tmp`, then `:file.make_link(tmp, path())`
    (**atomic**, content already present), and `File.rm(tmp)` either way.
 3. `:ok` → acquired. `{:error, :eexist}` → read+decode the holder:
-   - parseable **and** alive (`Pidfile.process_start(holder.pid) == holder.startedAt`) → sleep ~5 ms,
-     retry until the deadline.
+   - parseable **and** alive (`Pidfile.process_start(holder.pid) == {:ok, holder.startedAt}`) → sleep
+     ~5 ms, retry until the deadline.
    - parseable **and** confirmed-dead → `File.rm(path())` (steal) and retry immediately.
-   - unparseable/empty (should be impossible with `make_link` — corruption or a foreign writer) →
-     treat as held; back off until the deadline, then `{:error, :lock_timeout}` (never silently steal
-     an unreadable lock; the message is actionable: "remove `run.lock` if stale").
+   - unparseable/empty (should be impossible with `make_link` — corruption or a foreign writer) → back
+     off until the deadline, then `{:error, :lock_corrupt}` — a **distinct** reason from `:lock_timeout`
+     (Codex #7; never silently steal an unreadable lock). The CLI renders the concrete `run.lock` path
+     + "remove it if stale".
 
 **`release/0`** is `File.rm(path())`. **`with_lock/2`** wraps acquire → run-fun → `release` in an
 `after`, so a crash inside the critical section still releases (and even if the BEAM dies mid-section,
@@ -158,8 +162,9 @@ The one risky mechanism; isolated and unit-tested.
 - Parses `String.trim(out)` as the child pid (integer). The child is reparented to launchd on the
   immediate `sh` exit, so it survives the escript/BEAM exit; `nohup` makes it ignore SIGHUP; stdio is
   redirected to `log_path`.
-- The caller (`Commands.Run`) is responsible for `Pidfile.write` and the handshake; `Daemon` only
-  detaches and reports the pid.
+- **`spawn_detached` returns a *launch* pid** (the backgrounded fork) — **not** proof that redirection,
+  `exec`, or boot succeeded (Codex #5). The caller (`Commands.Run`) must confirm the launch via
+  `Pidfile.write` + `run.log` error events + liveness (§8); `Daemon` only detaches and reports the pid.
 
 **Why a shell and not a `Port`:** the spawn must *outlive* the BEAM and must not be a BEAM-owned port
 (Plan 2 finding #5). `sh -c '… & echo $!'` is the portable, `setsid(1)`-free way to background +
@@ -236,25 +241,36 @@ private() / public() :: Path.t()      # $VZBEAM_HOME/keys/id_ed25519[.pub]
 5. run_log = Path.join(Home.bundle_dir(name), "run.log");  build the run argv (argv[0] = located vz):
      [vz, "run", "--bundle", dir, "--mac", mac, "--cpu", n, "--mem", bytes,
       (--gui | --headless), "--resolution", WxH, ("--share", tag, abspath)?]
-6. Lock.with_lock(fn ->                          # sub-second critical section
+6. result = Lock.with_lock(fn ->                  # sub-second critical section
        running = Enum.count(Home.bundles(), &Pidfile.running?/1)
-       if running >= 2 -> {:error, :at_capacity}          # UX pre-check
-       else
-         {:ok, pid} = deps.spawn.(argv, run_log)           # Daemon.spawn_detached
-         :ok = Pidfile.write(name, pid)                    # countable immediately
-         {:ok, pid}
-       end
+       cond:
+         running >= 2 -> {:error, :at_capacity}            # UX pre-check
+         true ->
+           {:ok, pid} = deps.spawn.(argv, run_log)         # Daemon: a LAUNCH pid (not success)
+           case Pidfile.write(name, pid) do                # countable immediately
+             :ok -> {:ok, pid}
+             {:error, :process_not_found} -> {:spawn_exited, pid}   # vz died before ps saw it (Codex #2)
+           end
    end)
-7. await_started(run_log_path, ~60_000 ms):                # OUTSIDE the lock
-     read run.log → decode complete lines (drop a trailing partial)
-       error event (incl. VZError 6) -> {:error, {:vz,…}}  # authoritative cap
-       started{pid} -> {:ok, pid}                          # readiness gate
-       process no longer alive & no started -> {:error, :exited_early}  (+ run.log tail)
-       deadline passed -> {:error, :timeout}
-       else sleep ~100 ms, repeat
-8. on started: print  "started <name> (pid N) — networking; try `vzbeam ip <name>` / `vzbeam ssh <name>`"
-              and, when keys/ was just created, the one-time `ssh-copy-id -i <pub> admin@<ip>` hint.
-   on error/timeout/exited_early: kill -TERM the pid, File.rm vm.pid, return a typed error.
+   # Do NOT `:ok =`-match Pidfile.write: a fast sidecar failure makes process_start/ps miss the pid, so
+   # write returns {:error, :process_not_found} — that must flow to error-mapping, never raise.
+7. case result (all OUTSIDE the lock):
+     {:error, :at_capacity}                  -> typed cap error
+     {:error, :lock_timeout | :lock_corrupt} -> typed lock error (names run.lock)
+     {:spawn_exited, pid}                    -> classify_failure(run_log, pid)   # read run.log tail / error event
+     {:ok, pid}                              -> await_started(run_log, pid, ~60_000 ms)
+8. await_started(log, pid, timeout) — read run.log, decode complete lines (drop a trailing partial):
+     error event (incl. VZError 6)               -> {:error, {:vz,…}}    # authoritative cap
+     started{p} AND pid still alive              -> {:ok, pid}           # RE-CHECK liveness (Codex #3)
+     started{p} but pid gone / guest_stopped     -> {:error, :exited_early}  (+ run.log tail)
+     pid no longer alive & no started            -> {:error, :exited_early}  (+ run.log tail)
+     deadline passed                             -> {:error, :timeout}
+     else sleep ~100 ms, repeat
+9. on {:ok, pid}: print "started <name> (pid N) — networking; try `vzbeam ip` / `vzbeam ssh`"; when
+     keys/ was just created, the one-time `ssh-copy-id -i <pub> admin@<ip>` hint.
+   on ANY failure (cap / vz error / timeout / exited_early / spawn_exited): `kill -TERM` the pid if
+     still alive, and **always** `File.rm` vm.pid, then return a typed error. Cleanup is unconditional
+     so a failed launch never leaves a stale vm.pid inflating the cap (Codex #8).
 ```
 
 **`vm.pid` pid source.** The pid recorded is the spawned pid from `Daemon` (`echo $!`) — it is what
@@ -281,21 +297,30 @@ lines — the partial-final-line guard from `Protocol`. No offset tracking (YAGN
 
 Shared helper `resolve_ip(name) :: {:ok, ip} | {:error, :no_lease}` =
 `Leases.lookup_ip(Leases.read(), manifest["macAddress"])`. SSH option set (throwaway VMs whose IPs
-recycle): `-i <Keys.private()> -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o
-LogLevel=ERROR -o ConnectTimeout=5`. `ssh_user` from `Defaults` (`admin`).
+recycle): `-i <Keys.private()> -o BatchMode=yes -o StrictHostKeyChecking=no -o
+UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5`. `BatchMode=yes` makes a missing or
+not-yet-installed key **fail fast instead of hanging on a password prompt** (Codex #4). `ssh_user` from
+`Defaults` (`admin`).
 
 **`stop <name>`** (graceful — MVP §8, fact #4):
 1. `Pidfile.running?` (else "not running"); `Keys.ensure`; `resolve_ip`.
-2. `ssh … <user>@<ip> "sudo shutdown -h now"` (captured; a dropped connection on shutdown is success,
-   not an error). **Requires passwordless `sudo` for the ssh user** — a one-time first-boot setup item
-   documented alongside "create admin / enable Remote Login / ssh-copy-id" (HW-gated; surfaced in §12).
+2. `ssh -o BatchMode=yes … <user>@<ip> "sudo -n shutdown -h now"` — `sudo -n` **never prompts** (it
+   errors instead), so a missing passwordless-sudo config can't hang the command (Codex #4). A dropped
+   connection as the guest goes down is **success** — pid disappearance in step 3 is the authority, not
+   ssh's exit code. A `sudo`/auth failure (no passwordless sudo, key not installed) surfaces as a
+   **distinct, actionable setup error** ("enable passwordless sudo / install the key on first boot"),
+   never a hang. **Passwordless `sudo` for the ssh user** is a one-time first-boot setup item alongside
+   "create admin / enable Remote Login / ssh-copy-id" (HW-gated; §12).
 3. Poll `Pidfile.running?(name)` → false, bounded (~60 s; macOS shutdown is not instant). On stop:
    `File.rm` `vm.pid`. On timeout: report and suggest `vzbeam kill`.
 
 **`kill <name>`** (force — MVP §8, fact #9, **never `pkill`**):
-1. Read `vm.pid`; if not running, clean any stale `vm.pid` and report "not running".
-2. `System.cmd("kill", ["-TERM", pid])` — the sidecar traps SIGTERM → `VZVirtualMachine.stop()` →
-   emits `guest_stopped` → exits 0.
+1. Read `vm.pid`; if not `Pidfile.running?`, clean any stale `vm.pid` and report "not running".
+2. **Immediately before signaling, re-confirm `Pidfile.running?`** (start-time match) so a PID reused
+   between the check and the signal is never hit (Codex #9 — the pid-signaling race is inherent;
+   re-checking start-time narrows it and we never broaden to name-based killing). Then
+   `System.cmd("kill", ["-TERM", pid])` — the sidecar traps SIGTERM → `VZVirtualMachine.stop()` → emits
+   `guest_stopped` → exits 0.
 3. Poll for exit, bounded (~20 s). Still alive → `kill -KILL` (untrappable last resort), poll again.
 4. `File.rm` `vm.pid`.
 
@@ -326,7 +351,11 @@ orchestration tests:
   (drives `kill`, and `run`'s error/timeout cleanup).
 - An error/cap mode (e.g. `VZBEAM_FAKE_RUN=error vz run …`, or a sentinel bundle name) → print
   `{"type":"error","domain":"VZErrorDomain","code":6,"message":"max VMs"}` and `exit` non-zero —
-  drives the authoritative-cap path through `await_started`.
+  drives the authoritative-cap path through `await_started`. It must `exit` **fast** (before `ps` can
+  see the pid) → also drives the `Pidfile.write` `:process_not_found` early-exit race (§8 Codex #2).
+- A **`started`-then-exit** mode → print `started{pid}` then `exit 0` *immediately* (no idle) → drives
+  the stale-success race (§8 Codex #3): the engine must re-check liveness and classify it a startup
+  failure, not "running".
 - A slow/never-started mode → idle without ever printing `started` — drives the handshake **timeout**.
 - `restore …` (for the new `Sidecar.stream`) → print one or two `{"type":"progress","fraction":…}`
   lines then `{"type":"restored",…}` and `exit 0`; an error variant for the stderr-tail path.
@@ -360,9 +389,12 @@ The dummy long-running child + SIGTERM trap is exactly the daemonization shape p
 | `run` | `VZError 6` during handshake | same typed `:at_capacity` (authoritative); `vm.pid` cleaned |
 | `run` | `error` event / early exit / timeout | `kill -TERM` the pid, remove `vm.pid`, typed error + `run.log` tail |
 | `run` | `Lock` contention | `{:error, :lock_timeout}` → "another `vzbeam run` is in progress; retry" |
+| `run` | `run.lock` unreadable/corrupt | `{:error, :lock_corrupt}` → names the path, "remove it if stale" |
+| `run` | spawn forked but vz exited fast | `Pidfile.write` `:process_not_found` → `classify_failure` reads `run.log` (no raise) |
 | `run` | `--share` invalid | refuse before spawn (`:no_equals`/`:empty_tag`/`:tag_too_long`/`:no_such_dir`) |
 | `stop` | not running | "not running" (clean stale `vm.pid`) |
 | `stop` | no lease / SSH unreachable | actionable ("no lease yet" / "enable Remote Login + install key") |
+| `stop` | sudo/auth prompt (no passwordless sudo / no key) | actionable setup error (`sudo -n` + `BatchMode=yes`), never a hang |
 | `stop` | shutdown didn't complete in time | report + suggest `kill` |
 | `kill` | not running | clean stale `vm.pid`, report |
 | `kill` | SIGTERM ignored | escalate to `SIGKILL` (last resort); never `pkill` |
@@ -381,17 +413,21 @@ The dummy long-running child + SIGTERM trap is exactly the daemonization shape p
   child is reparented (not a port of the test BEAM). Spaces-in-path quoting test. (Full "survives BEAM
   halt" is the standalone spike + the escript smoke-run — ExUnit's BEAM stays up.)
 - **cap counting** — `Home.bundles ∩ Pidfile.running?` with fake live/stale `vm.pid`s → 0/1/2.
-- **handshake** — feed `run.log` fixtures (started / error / none-yet / partial-final-line / dead-pid)
-  → `{:ok,pid}` / `{:error,{:vz,…}}` / `:timeout` / `:exited_early`.
+- **handshake** — feed `run.log` fixtures (started / error / none-yet / partial-final-line / dead-pid /
+  **started-then-pid-gone**) → `{:ok,pid}` / `{:error,{:vz,…}}` / `:timeout` / `:exited_early` (the
+  started+dead re-check, Codex #3).
 - **`Keys`** — generates ed25519, idempotent, in a tmp `$VZBEAM_HOME`.
 - **`Share`** — good; `:no_equals`; oversize tag (37 bytes); missing dir; `=` in tag.
 - **`Sidecar.stream`** — real `Port` against the extended `fake_vz` restore (progress → restored);
   `on_event` invoked; error variant → stderr-tail path.
 - **`Commands.{Run,Stop,Kill,Ssh}`** — end-to-end via `CLI.run` against `fake_vz` + injected
   lease/ssh/lock: run → `started` → `vm.pid` written → cap refusal at 2 → timeout/error cleanup;
-  stop → ssh-shutdown command shape + reap; kill → SIGTERM to the trapping fake → `vm.pid` cleaned;
-  ssh → argv shape for `-- cmd` (injected runner) and the interactive path's exit-code propagation
-  (mechanism proven by the §2 pty spike).
+  **started-then-immediate-exit → startup failure, not "running"** (Codex #3); **VZError-6-fast-exit →
+  `Pidfile.write` `:process_not_found` → typed error + no stale `vm.pid`** (Codex #2);
+  stop → ssh-shutdown command shape (`sudo -n`, `BatchMode=yes`) via a mock ssh executor + reap;
+  kill → SIGTERM to the trapping fake → `vm.pid` cleaned; ssh → argv shape for `-- cmd` (injected
+  runner) and the interactive path's exit-code propagation (mechanism proven by the §2 pty spike;
+  the tty hand-off itself is a manual validation gate, not an ExUnit test).
 - **Escript smoke-run (the Plan-2 lesson):** build `./vzbeam` and actually run `run`/`stop`/`kill`/`ssh`
   against the fake in a scratch `$VZBEAM_HOME` — the real-syscall path that caught the Plan-2 mkdir bug
   the fakes masked.
@@ -406,8 +442,10 @@ The dummy long-running child + SIGTERM trap is exactly the daemonization shape p
 - **Detach = `nohup … & echo $!`**; own-session deferred to the sidecar's `setsid()` (Plan 4).
 - **Lock = `:file.make_link/2`** with `{pid, startedAt}` + start-time-matched liveness; steal only a
   confirmed-dead holder; `:lock_timeout` on a live/unreadable holder. Lock scope = count→spawn→`vm.pid`.
-- **Handshake timeout ≈ 60 s**; timeout/error ⇒ kill the child + clean `vm.pid` + fail (an un-`started`
-  VM isn't usable). Kill-reap ≈ 20 s before `SIGKILL`. Stop-reap ≈ 60 s.
+- **Handshake timeout ≈ 60 s**; success requires `started` **and** a live pid (re-checked — Codex #3);
+  timeout/error/early-exit ⇒ kill the child if alive + **always** clean `vm.pid` + fail (an un-`started`
+  VM isn't usable). Kill-reap ≈ 20 s before `SIGKILL`. Stop-reap ≈ 60 s; stop uses `ssh -o
+  BatchMode=yes … sudo -n` (no hang on missing sudo/key — Codex #4).
 - **SSH keys** lazy via `Keys.ensure/0`; **no setup verb**. SSH options assume throwaway VMs
   (`StrictHostKeyChecking=no`, `UserKnownHostsFile=/dev/null`).
 - **Single `--share`** for the MVP; multiple shares deferred. `--gui` opt-in, `--headless` default.
@@ -417,8 +455,11 @@ The dummy long-running child + SIGTERM trap is exactly the daemonization shape p
 
 ## 15. Open questions
 
-None blocking. Two items are explicitly HW-gated, not unknowns: (a) that a detached process reliably
-shows the AppKit window and boots, and (b) the passwordless-sudo path for `stop`'s guest shutdown — both
-validate on bare-metal Apple Silicon at the Plan-4 build milestone. A Codex pass on this spec (and
-especially on the riskiest mechanisms — `Daemon` detach + `Lock` atomicity) should run before the
-implementation hardens, per the project's review convention.
+None blocking. **Codex review folded in (2026-06-24, findings #1–#9 + TDD gaps):** the `Pidfile`
+unwrap (#1), the `Pidfile.write` early-exit race (#2), the `started`-then-dead liveness re-check (#3),
+`stop`'s `sudo -n` / `BatchMode=yes` no-hang (#4), the launch-pid framing (#5), `Lock`'s `mkdir_p` (#6)
+and distinct `:lock_corrupt` reason (#7), the conservative-cap confirmation (#8 — needed only
+unconditional `vm.pid` cleanup), and the `kill` start-time re-check (#9) are all reflected above. Two
+items remain explicitly HW-gated, not unknowns: (a) that a detached process reliably shows the AppKit
+window and boots, and (b) the real passwordless-`sudo` guest shutdown — both validate on bare-metal
+Apple Silicon at the Plan-4 build milestone.
