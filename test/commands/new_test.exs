@@ -35,7 +35,7 @@ defmodule VzBeam.Commands.NewTest do
     refute File.exists?(Path.join(home, "dev.pending"))
   end
 
-  test "clone refuses a running base", %{home: home} do
+  test "clone refuses a running base", %{home: _home} do
     :ok = VzBeam.Pidfile.write("base", System.pid())
     assert {:error, 1, msg} = New.run(["dev", "base"], deps())
     assert IO.iodata_to_binary(msg) =~ "running"
