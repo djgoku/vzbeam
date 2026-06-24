@@ -36,4 +36,11 @@ defmodule VzBeam.CacheTest do
   test "ensure rejects an unsafe build token (finding #7)" do
     assert {:error, :bad_build_token} = Cache.ensure("/tmp/x.ipsw", deps("../evil"))
   end
+
+  test "ensure clears stale *.pending files (finding #1)" do
+    File.mkdir_p!(Cache.dir())
+    File.write!(Path.join(Cache.dir(), "OLD.ipsw.99.pending"), "partial")
+    assert {:ok, :fetched, _} = Cache.ensure("/tmp/x.ipsw", deps())
+    refute File.exists?(Path.join(Cache.dir(), "OLD.ipsw.99.pending"))
+  end
 end

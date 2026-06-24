@@ -33,42 +33,59 @@ defmodule VzBeam.Cache do
   def ensure(spec, deps \\ default_deps()) do
     with {:ok, info} <- deps.image_info.(spec),
          :ok <- validate_build(info.build) do
+      clear_stale_pending()
       final = Path.join(dir(), "#{info.build}.ipsw")
 
       case lookup(info.build) do
         {:ok, entry} -> {:ok, :cached, entry}
         :error -> if File.regular?(final),
-                    do: {:ok, :reconciled, put_index(info, final)},
+                    do: with({:ok, e} <- put_index(info, final), do: {:ok, :reconciled, e}),
                     else: acquire(spec, info, final, deps)
       end
     end
   end
 
   defp acquire(spec, info, final, deps) do
-    File.mkdir_p!(dir())
     pending = "#{final}.#{System.unique_integer([:positive])}.pending"
     acquire = if spec == "latest", do: deps.download.(info.url, pending), else: deps.copy.(spec, pending)
 
-    with :ok <- acquire,
+    with :ok <- File.mkdir_p(dir()),
+         :ok <- acquire,
          :ok <- size_sane(pending),
-         :ok <- File.rename(pending, final) do
-      {:ok, :fetched, put_index(info, final)}
+         :ok <- File.rename(pending, final),
+         {:ok, entry} <- put_index(info, final) do
+      {:ok, :fetched, entry}
     else
       err -> File.rm(pending); err
     end
   end
 
   defp put_index(info, final) do
-    entry = %{"version" => info.version, "build" => info.build, "file" => Path.basename(final),
-              "source" => info.source, "url" => info.url, "bytes" => File.stat!(final).size,
-              "fetchedAt" => DateTime.utc_now() |> DateTime.to_iso8601()}
+    with {:ok, stat} <- File.stat(final) do
+      entry = %{"version" => info.version, "build" => info.build, "file" => Path.basename(final),
+                "source" => info.source, "url" => info.url, "bytes" => stat.size,
+                "fetchedAt" => DateTime.utc_now() |> DateTime.to_iso8601()}
 
-    index = read_index()
-    images = Map.put(index["images"] || %{}, info.build, entry)
-    :ok = AtomicFile.write(index_path(), Jason.encode!(Map.put(index, "images", images), pretty: true))
-    entry
+      index = read_index()
+      images = Map.put(index["images"] || %{}, info.build, entry)
+      case AtomicFile.write(index_path(), Jason.encode!(Map.put(index, "images", images), pretty: true)) do
+        :ok -> {:ok, entry}
+        err -> err
+      end
+    end
   end
 
+  defp clear_stale_pending do
+    case File.ls(dir()) do
+      {:ok, entries} ->
+        entries
+        |> Enum.filter(&String.ends_with?(&1, ".pending"))
+        |> Enum.each(&File.rm_rf(Path.join(dir(), &1)))
+      _ -> :ok
+    end
+  end
+
+  # Plan 2 has no expected size source (image-info carries none); real size/checksum check lands with the live download in Plan 3/4.
   defp size_sane(path) do
     case File.stat(path) do
       {:ok, %{size: s}} when s > 0 -> :ok

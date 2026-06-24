@@ -33,10 +33,16 @@ defmodule VzBeam.Sidecar do
       lines = String.split(out, "\n", trim: true)
       final_newline? = out == "" or String.ends_with?(out, "\n")
 
-      case Protocol.collect(lines, Map.get(@terminals, subcommand, []), final_newline?) do
-        {:ok, events, _terminal} -> {:ok, events}
-        {:error, :no_terminal} when status != 0 -> {:error, {:exit, status}}
-        {:error, _} = err -> err
+      result = Protocol.collect(lines, Map.get(@terminals, subcommand, []), final_newline?)
+
+      cond do
+        match?({:error, {:vz, _, _, _}}, result) -> result
+        status != 0 -> {:error, {:exit, status}}
+        true ->
+          case result do
+            {:ok, events, _terminal} -> {:ok, events}
+            {:error, _} = err -> err
+          end
       end
     end
   end

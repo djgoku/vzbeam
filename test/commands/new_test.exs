@@ -57,4 +57,17 @@ defmodule VzBeam.Commands.NewTest do
   test "--image is mutually exclusive with a base" do
     assert {:error, 2, _} = New.run(["dev", "base", "--image", "latest"], deps())
   end
+
+  test "clone clears a stale .pending and does not nest", %{home: home} do
+    File.mkdir_p!(Path.join(home, "dev.pending"))
+    File.write!(Path.join([home, "dev.pending", "junk"]), "stale")
+    assert {:ok, _} = New.run(["dev", "base"], deps())
+    refute File.exists?(Path.join([home, "dev", "junk"]))      # stale junk gone
+    refute File.exists?(Path.join([home, "dev", "base"]))      # not nested
+    assert File.exists?(Path.join([home, "dev", "config.json"]))
+  end
+
+  test "rejects an unknown option" do
+    assert {:error, 2, _} = New.run(["dev", "base", "--bogus", "x"], deps())
+  end
 end

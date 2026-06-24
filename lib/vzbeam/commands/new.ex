@@ -8,14 +8,18 @@ defmodule VzBeam.Commands.New do
   def run(args), do: run(args, default_deps())
 
   def run(args, deps) do
-    {opts, positional, _} =
+    {opts, positional, invalid} =
       OptionParser.parse(args, strict: [image: :string, cpu: :integer, mem_gb: :integer, disk_gb: :integer])
 
-    case {positional, opts[:image]} do
-      {[name, base], nil} -> clone(name, base, deps)
-      {[name], img} when is_binary(img) -> restore(name, img, opts, deps)
-      {[_, _], img} when is_binary(img) -> {:error, 2, "new: --image is mutually exclusive with a base\n"}
-      _ -> {:error, 2, "usage: vzbeam new <name> <base> | new <name> --image <latest|PATH>\n"}
+    if invalid != [] do
+      {:error, 2, "new: unknown option\n"}
+    else
+      case {positional, opts[:image]} do
+        {[name, base], nil} -> clone(name, base, deps)
+        {[name], img} when is_binary(img) -> restore(name, img, opts, deps)
+        {[_, _], img} when is_binary(img) -> {:error, 2, "new: --image is mutually exclusive with a base\n"}
+        _ -> {:error, 2, "usage: vzbeam new <name> <base> | new <name> --image <latest|PATH>\n"}
+      end
     end
   end
 
@@ -27,7 +31,7 @@ defmodule VzBeam.Commands.New do
          {:ok, base_m} <- read_base(base),
          :ok <- refute_running(base),
          :ok <- refute_exists(name),
-         _ <- File.rm_rf(pending),
+         :ok <- clear_pending(pending),
          :ok <- cp_rc(Home.bundle_dir(base), pending),
          {:ok, ids} <- deps.reid.(),
          :ok <- write_manifest(pending, clone_manifest(base_m, name, base, ids)),
@@ -56,7 +60,7 @@ defmodule VzBeam.Commands.New do
     with :ok <- validate_name(name),
          :ok <- refute_exists(name),
          {:ok, _status, entry} <- deps.ensure.(spec),
-         _ <- File.rm_rf(pending),
+         :ok <- clear_pending(pending),
          :ok <- File.mkdir_p(pending),
          :ok <- create_sparse(Path.join(pending, "disk.img"), disk_bytes),
          {:ok, r} <- deps.restore.(%{ipsw: Path.join(Cache.dir(), entry["file"]),
@@ -119,11 +123,19 @@ defmodule VzBeam.Commands.New do
 
   defp now, do: DateTime.utc_now() |> DateTime.to_iso8601()
 
+  defp clear_pending(pending) do
+    case File.rm_rf(pending) do
+      {:ok, _} -> :ok
+      {:error, reason, _file} -> {:error, {:pending_cleanup, reason}}
+    end
+  end
+
   defp error({:error, :reserved_name}), do: {:error, 1, "new: name is reserved\n"}
   defp error({:error, :bad_name}), do: {:error, 1, "new: invalid name\n"}
   defp error({:error, :no_such_base}), do: {:error, 1, "new: no such base\n"}
   defp error({:error, :base_running}), do: {:error, 1, "new: base is running; stop it first\n"}
   defp error({:error, :exists}), do: {:error, 1, "new: bundle already exists\n"}
+  defp error({:error, {:pending_cleanup, _}}), do: {:error, 1, "new: could not clear a stale .pending dir\n"}
   defp error({:error, reason}), do: {:error, 1, ["new failed: ", inspect(reason), "\n"]}
 
   defp default_deps,

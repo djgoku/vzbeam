@@ -44,4 +44,9 @@ defmodule VzBeam.SidecarTest do
     runner = fn _p, _a, _ -> {~s({"type":"image","build":"25F80"}), 0} end  # no trailing newline
     assert {:error, :unterminated} = Sidecar.image_info("latest", runner)
   end
+
+  test "non-zero exit dominates a terminal event (spec precedence)" do
+    runner = fn _p, _a, _ -> {~s({"type":"image","version":"26","build":"X","url":"u","source":"s"}\n), 1} end
+    assert {:error, {:exit, 1}} = VzBeam.Sidecar.image_info("latest", runner)
+  end
 end
