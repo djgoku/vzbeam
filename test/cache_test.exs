@@ -12,7 +12,7 @@ defmodule VzBeam.CacheTest do
   defp deps(build \\ "25F80") do
     %{
       image_info: fn _ -> {:ok, %{version: "26.5.1", build: build, url: "file:///x", source: "local"}} end,
-      copy: fn _src, dst -> File.mkdir_p!(Path.dirname(dst)); File.write(dst, "IPSWBYTES") end,
+      copy: fn _src, dst -> File.write(dst, "IPSWBYTES") end,
       download: fn _url, _dst -> {:error, :should_not_download} end
     }
   end
@@ -42,5 +42,27 @@ defmodule VzBeam.CacheTest do
     File.write!(Path.join(Cache.dir(), "OLD.ipsw.99.pending"), "partial")
     assert {:ok, :fetched, _} = Cache.ensure("/tmp/x.ipsw", deps())
     refute File.exists?(Path.join(Cache.dir(), "OLD.ipsw.99.pending"))
+  end
+
+  test "ensure creates the cache dir before copying (real cp -c)" do
+    src = Path.join(System.tmp_dir!(), "vzb-src-#{System.unique_integer([:positive])}.ipsw")
+    File.write!(src, "ipsw-bytes")
+    on_exit(fn -> File.rm(src) end)
+
+    real_copy = fn s, d ->
+      case System.cmd("cp", ["-c", s, d], stderr_to_stdout: true) do
+        {_, 0} -> :ok
+        {out, _} -> {:error, {:copy_failed, String.trim(out)}}
+      end
+    end
+
+    deps = %{
+      image_info: fn _ -> {:ok, %{version: "26.5.1", build: "25F80", url: "file:///x", source: "local"}} end,
+      download: fn _u, _d -> {:error, :should_not_download} end,
+      copy: real_copy
+    }
+
+    assert {:ok, :fetched, _e} = Cache.ensure(src, deps)
+    assert File.regular?(Path.join(Cache.dir(), "25F80.ipsw"))
   end
 end
