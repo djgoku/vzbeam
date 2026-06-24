@@ -2,7 +2,9 @@ defmodule VzBeam.ShareTest do
   use ExUnit.Case, async: true
 
   test "parses a valid tag=/path (first = splits; host dir must exist)" do
-    dir = System.tmp_dir!()
+    dir = Path.join(System.tmp_dir!(), "vzbeam-share-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
+    on_exit(fn -> File.rm_rf!(dir) end)
     assert {:ok, %{tag: "shared", path: ^dir}} = VzBeam.Share.parse("shared=#{dir}")
   end
 

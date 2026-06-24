@@ -3,7 +3,9 @@ defmodule VzBeam.Share do
 
   @max_tag 36
 
-  @spec parse(String.t()) :: {:ok, %{tag: String.t(), path: Path.t()}} | {:error, atom}
+  @spec parse(String.t()) ::
+          {:ok, %{tag: String.t(), path: Path.t()}}
+          | {:error, :no_equals | :empty_tag | :tag_too_long | :no_such_dir}
   def parse(spec) do
     case String.split(spec, "=", parts: 2) do
       [_] ->
@@ -11,8 +13,6 @@ defmodule VzBeam.Share do
 
       [tag, path] ->
         abs = Path.expand(path)
-        # Preserve trailing slash if present in input
-        abs = if String.ends_with?(path, "/"), do: abs <> "/", else: abs
 
         cond do
           tag == "" -> {:error, :empty_tag}
