@@ -45,4 +45,10 @@ defmodule VzBeam.Commands.StopTest do
     assert {:error, 1, m1} = Stop.run(["dev"], %{ssh: fn _ -> {"", 0} end, leases: fn -> "" end, reap_ms: 0})
     assert IO.iodata_to_binary(m1) =~ "not running"
   end
+
+  test "errors with no DHCP lease when VM is running but has no lease" do
+    # pid file is already written by setup (VM is running)
+    assert {:error, 1, msg} = Stop.run(["dev"], %{ssh: fn _ -> {"", 0} end, leases: fn -> "" end, reap_ms: 0})
+    assert IO.iodata_to_binary(msg) =~ "no DHCP lease"
+  end
 end

@@ -1,6 +1,6 @@
 defmodule VzBeam.Commands.Stop do
   @moduledoc "stop <name> — graceful guest shutdown over SSH (sudo -n shutdown -h now)."
-  alias VzBeam.{Manifest, Pidfile, Keys, Leases, Defaults}
+  alias VzBeam.{Manifest, Pidfile, Keys, Leases, SshConn}
 
   @reap_ms 60_000
   @poll_ms 500
@@ -12,8 +12,8 @@ defmodule VzBeam.Commands.Stop do
     with {:ok, m} <- read_manifest(name),
          :ok <- ensure_running(name),
          {:ok, _} <- Keys.ensure(),
-         {:ok, ip} <- resolve_ip(m, deps.leases.()) do
-      _ = deps.ssh.(ssh_args(ip) ++ ["sudo", "-n", "shutdown", "-h", "now"])
+         {:ok, ip} <- SshConn.resolve_ip(m, deps.leases.()) do
+      _ = deps.ssh.(SshConn.args(ip) ++ ["sudo", "-n", "shutdown", "-h", "now"])
       deadline = System.monotonic_time(:millisecond) + Map.get(deps, :reap_ms, @reap_ms)
 
       case reap(name, deadline) do
@@ -35,12 +35,6 @@ defmodule VzBeam.Commands.Stop do
     end
   end
 
-  defp ssh_args(ip) do
-    ["-i", Keys.private(), "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
-     "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=5",
-     "#{Defaults.values().ssh_user}@#{ip}"]
-  end
-
   defp read_manifest(name) do
     case Manifest.read(name) do
       {:ok, m} -> {:ok, m}
@@ -49,13 +43,6 @@ defmodule VzBeam.Commands.Stop do
   end
 
   defp ensure_running(name), do: if(Pidfile.running?(name), do: :ok, else: {:error, :not_running})
-
-  defp resolve_ip(m, leases) do
-    case Leases.lookup_ip(leases, m["macAddress"]) do
-      nil -> {:error, :no_lease}
-      ip -> {:ok, ip}
-    end
-  end
 
   defp error({:error, :no_such_bundle}), do: {:error, 1, "stop: no such bundle\n"}
   defp error({:error, :not_running}), do: {:error, 1, "stop: not running\n"}
