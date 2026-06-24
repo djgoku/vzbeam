@@ -924,17 +924,30 @@ git commit -m "feat: fetch verb"
 
 ---
 
-## Task 9: `images` verb
+## Task 9: `images` verb (+ shared `VzBeam.Table`)
 
 **Files:**
-- Create: `lib/vzbeam/commands/images.ex`, `test/commands/images_test.exs`
-- Modify: `lib/vzbeam/cli.ex`
+- Create: `lib/vzbeam/table.ex`, `lib/vzbeam/commands/images.ex`, `test/table_test.exs`, `test/commands/images_test.exs`
+- Modify: `lib/vzbeam/commands/ls.ex` (reuse the shared renderer), `lib/vzbeam/cli.ex`
 
 **Interfaces:**
 - Consumes: `Cache.list/0` (Task 7).
-- Produces: `Images.run(args, list_fn \\ &Cache.list/0) :: {:ok, iodata}`.
+- Produces: `VzBeam.Table.render(rows :: [[String.t()]]) :: iodata` (pads each column to its widest cell + 2 spaces, newline-terminates each row — extracted verbatim from `Ls`'s private renderer); `Images.run(args, list_fn \\ &Cache.list/0) :: {:ok, iodata}`.
+- Refactor: `Ls` drops its private `render/1` and calls `VzBeam.Table.render/1` (DRY — pre-flight finding; output identical, so `ls_test` stays green).
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
+
+```elixir
+# test/table_test.exs
+defmodule VzBeam.TableTest do
+  use ExUnit.Case, async: true
+
+  test "pads each column to its widest cell + 2 and newline-terminates rows" do
+    out = VzBeam.Table.render([["NAME", "OS"], ["base", "26.5.1"]]) |> IO.iodata_to_binary()
+    assert out == "NAME  OS      \nbase  26.5.1  \n"
+  end
+end
+```
 
 ```elixir
 # test/commands/images_test.exs
@@ -956,12 +969,41 @@ defmodule VzBeam.Commands.ImagesTest do
 end
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Run tests to verify they fail**
 
-Run: `mix test test/commands/images_test.exs`
-Expected: FAIL — module undefined.
+Run: `mix test test/table_test.exs test/commands/images_test.exs`
+Expected: FAIL — modules undefined.
 
-- [ ] **Step 3: Write the verb + wire the CLI**
+- [ ] **Step 3: Extract `Table`, refactor `Ls`, write `Images`, wire the CLI**
+
+```elixir
+# lib/vzbeam/table.ex  (NEW — shared renderer, extracted verbatim from Ls)
+defmodule VzBeam.Table do
+  @moduledoc "Render equal-length string rows as a padded text table (iodata)."
+
+  @spec render([[String.t()]]) :: iodata
+  def render(rows) do
+    widths =
+      rows
+      |> Enum.zip()
+      |> Enum.map(fn col -> col |> Tuple.to_list() |> Enum.map(&String.length/1) |> Enum.max() end)
+
+    Enum.map(rows, fn cols ->
+      cols
+      |> Enum.zip(widths)
+      |> Enum.map(fn {c, w} -> String.pad_trailing(c, w + 2) end)
+      |> then(&[&1, "\n"])
+    end)
+  end
+end
+```
+
+```elixir
+# lib/vzbeam/commands/ls.ex — DELETE the private `render/1`; call the shared renderer.
+# Change the run/2 body's final line to:
+    {:ok, VzBeam.Table.render([@header | rows])}
+# ...and remove the whole `defp render(rows) do ... end` function. No other change; output is identical.
+```
 
 ```elixir
 # lib/vzbeam/commands/images.ex
@@ -974,27 +1016,16 @@ defmodule VzBeam.Commands.Images do
   def run(args), do: run(args, &VzBeam.Cache.list/0)
 
   def run(_args, list_fn) do
-    rows = Enum.map(list_fn.(), fn e ->
-      [e["version"] || "-", e["build"] || "-", size(e["bytes"]), e["source"] || "-"]
-    end)
+    rows =
+      Enum.map(list_fn.(), fn e ->
+        [e["version"] || "-", e["build"] || "-", size(e["bytes"]), e["source"] || "-"]
+      end)
 
-    {:ok, render([@header | rows])}
+    {:ok, VzBeam.Table.render([@header | rows])}
   end
 
   defp size(b) when is_number(b), do: "#{trunc(b / (1024 * 1024 * 1024))}G"
   defp size(_), do: "-"
-
-  defp render(rows) do
-    widths =
-      rows |> Enum.zip()
-      |> Enum.map(fn col -> col |> Tuple.to_list() |> Enum.map(&String.length/1) |> Enum.max() end)
-
-    Enum.map(rows, fn cols ->
-      cols |> Enum.zip(widths)
-      |> Enum.map(fn {c, w} -> String.pad_trailing(c, w + 2) end)
-      |> then(&[&1, "\n"])
-    end)
-  end
 end
 ```
 
@@ -1008,14 +1039,14 @@ end
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `mix test test/commands/images_test.exs`
-Expected: PASS.
+Run: `mix test test/table_test.exs test/commands/images_test.exs test/commands/ls_test.exs`
+Expected: PASS (Ls output unchanged).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add lib/vzbeam/commands/images.ex test/commands/images_test.exs lib/vzbeam/cli.ex
-git commit -m "feat: images verb"
+git add lib/vzbeam/table.ex lib/vzbeam/commands/images.ex lib/vzbeam/commands/ls.ex test/table_test.exs test/commands/images_test.exs lib/vzbeam/cli.ex
+git commit -m "feat: images verb; extract shared VzBeam.Table renderer (Ls reuses it)"
 ```
 
 ---
