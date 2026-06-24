@@ -11,7 +11,7 @@ defmodule VzBeam.Commands.Ls do
   def run(_args, read_leases) do
     leases = read_leases.()
     rows = Enum.map(Home.bundles(), &row(&1, leases))
-    {:ok, render([@header | rows])}
+    {:ok, VzBeam.Table.render([@header | rows])}
   end
 
   defp row(name, leases) do
@@ -39,18 +39,4 @@ defmodule VzBeam.Commands.Ls do
 
   defp mem(bytes) when is_number(bytes), do: "#{trunc(bytes / (1024 * 1024 * 1024))}G"
   defp mem(_), do: "-"
-
-  defp render(rows) do
-    widths =
-      rows
-      |> Enum.zip()
-      |> Enum.map(fn col -> col |> Tuple.to_list() |> Enum.map(&String.length/1) |> Enum.max() end)
-
-    Enum.map(rows, fn cols ->
-      cols
-      |> Enum.zip(widths)
-      |> Enum.map(fn {c, w} -> String.pad_trailing(c, w + 2) end)
-      |> then(&[&1, "\n"])
-    end)
-  end
 end

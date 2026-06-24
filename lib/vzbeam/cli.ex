@@ -8,6 +8,7 @@ defmodule VzBeam.CLI do
     ls                 list VM bundles
     ip <name>          print a VM's IP (from DHCP leases)
     fetch <latest|PATH> download/cache a restore image
+    images             list cached restore images
   """
 
   @spec main([String.t()]) :: no_return
@@ -25,5 +26,6 @@ defmodule VzBeam.CLI do
   def run(["ip" | rest]), do: VzBeam.Commands.Ip.run(rest)
   def run(["ls" | rest]), do: VzBeam.Commands.Ls.run(rest)
   def run(["fetch" | rest]), do: VzBeam.Commands.Fetch.run(rest)
+  def run(["images" | rest]), do: VzBeam.Commands.Images.run(rest)
   def run([verb | _]), do: {:error, 2, ["unknown command: ", verb, "\n", @usage]}
 end
