@@ -11,6 +11,7 @@ defmodule VzBeam.CLI do
     images             list cached restore images
     new <name> <base>  clone a stopped base (CoW)
     new <name> --image <latest|PATH>  restore a fresh base
+    rm <name>          delete a stopped bundle
   """
 
   @spec main([String.t()]) :: no_return
@@ -30,5 +31,6 @@ defmodule VzBeam.CLI do
   def run(["fetch" | rest]), do: VzBeam.Commands.Fetch.run(rest)
   def run(["images" | rest]), do: VzBeam.Commands.Images.run(rest)
   def run(["new" | rest]), do: VzBeam.Commands.New.run(rest)
+  def run(["rm" | rest]), do: VzBeam.Commands.Rm.run(rest)
   def run([verb | _]), do: {:error, 2, ["unknown command: ", verb, "\n", @usage]}
 end
