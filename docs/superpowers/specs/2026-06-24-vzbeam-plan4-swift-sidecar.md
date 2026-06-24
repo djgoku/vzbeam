@@ -1,6 +1,6 @@
 # vzbeam — Plan 4 Spec: the Swift `vz` sidecar
 
-- **Status:** Draft for review (pre-Codex)
+- **Status:** Draft — Codex-reviewed (8 findings folded in 2026-06-24); ready for user re-review.
 - **Date:** 2026-06-24
 - **Nature:** The only component that links `Virtualization.framework`. Builds on the engine from Plans 1–3
   (merged to `main`, 100 tests green). The fake sidecar + the 100-test suite are the **frozen wire-contract
@@ -86,16 +86,18 @@ was never built. We reconcile to the `Mix.Task`:
 
 - A `Mix.Task` locates `swift/` reliably via the project root; an escript verb would have to guess from cwd.
 - It matches §10 verbatim and keeps the CLI surface minimal (adds no verb).
-- Burrito's "no toolchain at runtime" case is explicitly deferred (parent §11), so the release-time error
-  wording is a packaging-milestone concern, not Plan 4's.
+- Burrito's "no toolchain at runtime" case is explicitly deferred (parent §11); Plan 4 ships **no release
+  path**, so there is exactly one not-found message to get right — the dev one — and it changes now.
 
 `mix vz.build` does: `swift build -c release` (streaming output) → **`codesign --force --sign -
 --entitlements swift/vz.entitlements <product>`** → install to `$VZBEAM_HOME/bin/vz`. It **re-signs every
 build** because `swift build` drops the entitlement on each relink (fact #10). Network-free. Run once per
 machine (build host *and* Mac).
 
-`run.ex`'s not-found message changes from `…(`vzbeam build-sidecar`)` to `…(`mix vz.build`)`; any test
-asserting that string is updated in lockstep.
+**Error-string change (Codex SHOULD-FIX #4):** `run.ex`'s not-found message changes **now**, from
+`…(`vzbeam build-sidecar`)` to `…(`mix vz.build`)` (`run.ex:188`). No test currently pins that string
+(verified across `test/`), so it is a clean one-line change that supersedes the parent §10 phrasing; it is
+exercised by the not-found path + the provisioning smoke-run, not a new assertion.
 
 ---
 
@@ -147,12 +149,15 @@ Resulting `build_argv/5` (`lib/vzbeam/commands/run.ex`):
 
 **Lockstep edits to stay at 100 green:**
 1. `test/commands/run_test.exs` `make_bundle/1`: add `"machineIdentifier"` + `"hardwareModel"` to the config.
-2. New `run_test` case: the `spawn` dep captures argv and asserts it contains
-   `--machine-id`/`--hardware-model`/`--disk …/disk.img`/`--aux …/aux.img` and **no** `--bundle`. This pins
-   the new contract.
-3. `test/support/fake_vz` needs **no change** — its `run` branch ignores argv and emits the right events; in
-   `run_test` the spawn is faked so `fake_vz` isn't exec'd. The fake stays a *wire* oracle, not an argv
-   validator.
+2. **Required acceptance criterion (Codex SHOULD-FIX #6) — a new `run_test` case** whose `spawn` dep captures
+   argv and asserts the full expected list, in order:
+   `[vz, "run", "--machine-id", <id>, "--hardware-model", <hw>, "--mac", <mac>, "--disk", "<bundle>/disk.img",
+   "--aux", "<bundle>/aux.img", "--cpu", <n>, "--mem", <bytes>, "--headless", "--resolution", <WxH>]`; and,
+   with `--share tag=/p`, that `["--share", <tag>, <abspath>]` is appended **in that order** (`share_args/1`,
+   `run.ex:161`); and that `--bundle` is absent. This is what protects the real Swift contract.
+3. `test/support/fake_vz`'s **`run` branch** needs no change — it ignores argv and emits the right events; in
+   `run_test` the spawn is faked so `fake_vz` isn't exec'd. (Its **`image-info` branch does change**, for
+   `source` — see §6.3.) The fake stays a *wire* oracle, not an argv validator.
 
 No existing test asserts `build_argv` output, so nothing else moves.
 
@@ -178,9 +183,14 @@ Emit `{"type":"image","version":"<maj.min.patch>","build":"<buildVersion>","url"
 
 Both are async completion-handler APIs → kick off the load, then `RunLoop.main.run()`; the completion
 handler emits + flushes + `exit()` (uniform with `restore`/`run`, and avoids any main-queue-handler deadlock
-a `DispatchSemaphore` could cause). The engine never branches on `source` (only on the literal spec), so
-`"local"` is a real-`vz` nicety not pinned by tests. Green-bucket: shape + error path here; happy path needs
-a real IPSW.
+a `DispatchSemaphore` could cause). Green-bucket: shape + error path here; happy path needs a real IPSW.
+
+**`source` semantics (Codex SHOULD-FIX #3).** The engine never branches on `source` (only on the literal
+spec), but it *does* persist it into `cache/ipsw/index.json` (`Cache.put_index/2`, `cache.ex:66-70`) and the
+bundle's `image` block — so it is recorded metadata, not throwaway display. To keep the fake a **faithful**
+oracle, `test/support/fake_vz`'s `image-info` line is updated to emit `source` **per-arg** (`"latest"` for
+`latest`, else `"local"`), matching what `cache_test.exs:14,60` already stub. `sidecar_test.exs:29-31`
+exercises wrapper pass-through with its own inline stub (`"latest"`) and is unaffected.
 
 ### 6.4 `restore` (HW-gated)
 Streams `progress`, then `restored`. Flow (`Restore.swift`):
@@ -196,13 +206,17 @@ Streams `progress`, then `restored`. Flow (`Restore.swift`):
    `installer.progress.fractionCompleted` → emit `{"type":"progress","fraction":X}` (throttled).
 6. Success → `{"type":"restored","machineIdentifier":"<b64>","hardwareModel":"<b64>","macAddress":"5e:..","version":"<maj.min.patch>","build":"<build>"}` → exit 0.
 
-`install()` is async → drive `RunLoop.main.run()` until the handler fires, then exit. `--disk-size` is
-accepted but the disk is already sized by the engine (Swift attaches it; may use the flag for a size sanity
-check).
+`install()` is async → drive `RunLoop.main.run()` until the handler fires, then exit. **`--disk-size` ownership
+(Codex NICE #7): the sidecar must not create or resize `disk.img`** — the engine owns that (`new.ex:65-68`
+pre-creates the sparse disk). Swift only attaches the existing disk; it may verify the file's size matches and
+emit an `error` on mismatch, nothing more.
 
 ### 6.5 `run` (HW-gated; the riskiest piece — Codex review target)
-**Startup:** `setsid()` immediately (the sidecar owns its session; the engine only `nohup`s). Then build the
-config.
+**Startup:** `setsid()` immediately, **in-process and without forking** (the sidecar owns its session; the
+engine only `nohup`s it and captures the launch pid via `echo $!` — `daemon.ex:9`, where `nohup` exec's into
+`vz` so `$!` *is* `vz`'s pid). Because there is no fork after that point, `getpid()` in the `started` event
+equals the captured pid the engine already persists to `vm.pid`; the engine does not read `started.pid`, so
+this **no-fork invariant** is what keeps the two in agreement (Codex SHOULD-FIX #5). Then build the config.
 
 **Config (`VMConfig.swift`):**
 - platform = `VZMacPlatformConfiguration` from `VZMacHardwareModel(dataRepresentation: b64(--hardware-model))`,
@@ -223,14 +237,21 @@ engine maps it). Then keep the main thread alive:
 - **`--gui`** → `NSApplication` (accessory policy) + a window hosting `VZVirtualMachineView(virtualMachine:)`,
   then `app.run()`. Detached-window-actually-appears is a real-HW check.
 
-**Two stop paths, both → `{"type":"guest_stopped"}` + `exit(0)`:**
+**Single terminal-emission path (Codex BLOCKING #1).** All terminal outcomes — `guest_stopped` + `exit(0)`,
+or `error` + non-zero exit — go through **one idempotent `finishOnce` closure** guarded by a flag and
+dispatched on `.main`, so nothing can double-emit or race two `exit()`s (notably if `vm.stop()` *also* drives
+the `guestDidStop` delegate). The **delegate is the canonical emitter** once the VM has actually stopped; the
+kill path merely *asks* the VM to stop and lets the same `finishOnce` fire.
+
+**Two stop paths, both resolve through `finishOnce`:**
 - **`kill`** (engine sends `SIGTERM`, fact #9): `signal(SIGTERM, SIG_IGN)` + `DispatchSource.makeSignalSource
-  (signal: SIGTERM, queue: .main)` whose handler calls `vm.stop()`; emit on its completion. A main-queue
+  (signal: SIGTERM, queue: .main)` whose handler calls `vm.stop()`. `finishOnce` emits `guest_stopped` + exits
+  once the VM is stopped (delegate or `stop()` completion, whichever the guard sees first). A main-queue
   signal source fires under `RunLoop.main.run()`/`NSApp.run()` — **this mechanism is validatable on the build
   host** with a dummy no-VM program.
 - **`stop`** (engine does guest `shutdown -h now` over SSH, since `requestStop()` is ignored headless, fact
-  #4): the `guestDidStop(_:)` delegate fires → emit + exit. `didStopWithError` → `error` event + exit
-  non-zero.
+  #4): the `guestDidStop(_:)` delegate fires → `finishOnce` (`guest_stopped` + exit 0). `didStopWithError` →
+  `finishOnce` with an `error` event + non-zero exit.
 
 ---
 
@@ -241,8 +262,13 @@ engine maps it). Then keep the main thread alive:
   `vz` runs → `Sidecar.locate/0` finds it → `check_version` passes.
 - `reid` real minting; emit shape; engine `reid` wrapper parses it.
 - `image-info` JSON shape + error path (load a non-IPSW → graceful `error`).
+- **Async-queue probe (Codex NICE #8):** a small Swift program logs which thread/queue the `image-info`
+  (local-error) and `restore` (failure) completion handlers fire on, and asserts the JSON line is flushed
+  before `exit()` — confirming the `RunLoop.main.run()` + exit-from-handler pattern can't strand a handler or
+  drop buffered stdout.
 - `--share` tag rules via `VZVirtioFileSystemDeviceConfiguration.validateTag` (static, no VM).
-- The SIGTERM→`stop()` signal mechanism under `RunLoop.main.run()` (dummy no-VM program).
+- The SIGTERM→`stop()` signal mechanism (and the `finishOnce` guard) under `RunLoop.main.run()` (dummy
+  no-VM program).
 - The 100 Elixir tests stay green + the escript `run`→`kill` smoke against the real `fake_vz`.
 
 **HW-gated — the documented Mac suite, run over SSH (rsync → Mac → execute), ordered to de-risk capability
@@ -254,9 +280,17 @@ first:**
 5. `vzbeam run base --gui` → **first boot + Setup Assistant** — ⚠️ **manual checkpoint** (window on the Mac's
    display: create `admin`, enable Remote Login, run the one-time `ssh-copy-id`).
 6. `vzbeam new dev base` (clone + `reid`) → `vzbeam run dev` (headless) → `ip`/`bridge100`/`ssh`.
-7. `ssh -- cmd` one-shot + interactive; `--share` virtiofs round-trip.
-8. `stop` (graceful→`guestDidStop`→exit0); `kill` (SIGTERM→`stop()`→`guest_stopped`→exit0).
-9. 2-VM cap: 3rd `run` → `VZError 6`; then `rm` cleanup.
+7. `ssh -- cmd` one-shot + interactive; `--share` virtiofs round-trip. Confirm `started.pid` == the bundle's
+   `vm.pid` (the no-fork invariant, §6.5).
+8. `stop` (graceful→`guestDidStop`→exit0); `kill` (SIGTERM→`stop()`→single `guest_stopped`→exit0); confirm
+   exactly **one** terminal event per stop (the `finishOnce` guard).
+9. **2-VM cap — two distinct checks (Codex BLOCKING #2):**
+   - (a) **engine pre-check:** with two live pidfiles, a 3rd `vzbeam run` returns `:at_capacity` *without
+     spawning the sidecar* (`run.ex:44-46`). This is the UX pre-check, not the framework path.
+   - (b) **framework-authoritative `VZError 6`:** with two VMs actually running, invoke `vz run` **directly**
+     (bypassing the engine's `count_running/0`) against a 3rd bundle, and confirm `start()` yields
+     `VZErrorDomain code 6`, emitted as an `error` event and mapped by the engine to its cap error.
+   Then `rm` cleanup.
 
 Results are captured into a results doc so the HW-gated definition-of-done is on the record.
 
@@ -267,12 +301,13 @@ everything after a configured base is SSH-automatable.
 
 ## 8. Testing strategy
 
-- **Swift unit tests (build host):** `Args` parser; `Wire` emits exactly-one-line compact JSON the
-  `Protocol` decoder accepts (cross-checked by piping `vz` output through the engine decoder); `reid`
-  minting; `image-info` shape/error; `validateTag` rules. (XCTest via SwiftPM, or assertion executables in a
-  test target — pick whichever runs cleanly under CLT.)
-- **Elixir lockstep tests (build host):** the `build_argv` seam assertion; updated `make_bundle`; the
-  error-string change; suite stays at 100.
+- **Swift unit tests (build host, `swift test`):** `Args` parser; `Wire` emits exactly-one-line compact JSON
+  the `Protocol` decoder accepts (cross-checked by piping `vz` output through the engine decoder); `reid`
+  minting; `image-info` shape/error; `validateTag` rules; the async-queue + flush-before-exit probe (§7).
+  XCTest via `swift test` works under CLT (no full Xcode).
+- **Elixir lockstep tests (build host):** the `build_argv` argv assertion (§5 item 2, required); updated
+  `make_bundle`; the `fake_vz` `image-info` `source` change (§6.3). The error-string change pins no test
+  (none exists). Suite stays at 100.
 - **HW-gated integration (Mac, over SSH):** the §7 suite. Documented and re-runnable; not green-bucket TDD.
 
 ---
@@ -284,8 +319,8 @@ everything after a configured base is SSH-automatable.
 - **No attached/Port `run` mode** — `run` always detaches (parent §8/§16).
 - **No catalog mirroring / checksum-from-image** — `image-info latest` is best-effort; cache size-sanity
   stays as in Plan 2/3.
-- **No Burrito/release provisioning** — deferred (parent §11); the not-found error wording is a
-  packaging-milestone concern.
+- **No Burrito/release provisioning** — deferred (parent §11). The dev not-found message *is* updated now to
+  `mix vz.build` (§3); only a future release-specific message would be packaging-milestone work.
 
 ---
 
@@ -296,18 +331,31 @@ everything after a configured base is SSH-automatable.
   real-HW check; may need `setActivationPolicy` + `activate`. Verified in suite step 5.
 - **`image-info latest` network** — Apple's catalog was unreachable from the build host; the Mac's
   reachability is unknown. Local-PATH is the always-available path.
-- **Signal-source-under-RunLoop** — the mechanism is validated on the build host; its interaction with a
-  *live VM's* `stop()` is confirmed in suite step 8.
+- **Signal-source-under-RunLoop + `finishOnce`** — the mechanism is validated on the build host; its
+  interaction with a *live VM's* `stop()`/`guestDidStop` (single terminal event) is confirmed in suite step 8.
+- **`VZError 6` reachability** — only observable by bypassing the engine pre-check; suite step 9(b) does this
+  with a direct `vz run`.
 - **First-boot manual checkpoint** — requires hands at the Mac (§7 step 5).
 
 ---
 
-## 11. References
+## 11. Codex review (2026-06-24)
+
+Independent adversarial design review (session `019efbed-13d1-70b1-8c9f-596499779ea8`). All 8 findings folded
+in: BLOCKING #1 single `finishOnce` terminal path (§6.5); BLOCKING #2 split cap validation (§7 step 9);
+SHOULD-FIX #3 `source` semantics + faithful fake (§6.3); #4 provisioning/error-string wording (§3/§9); #5
+no-fork pid invariant (§6.5); #6 required argv test with exact list (§5 item 2); NICE #7 `--disk-size`
+verify-only (§6.4); #8 async-queue/flush probe (§7/§8).
+
+---
+
+## 12. References
 
 - Parent design: `docs/superpowers/specs/2026-06-21-vzbeam-design.md` (§3/§4/§7/§8/§9/§10/§12/§13).
 - Plan 3 (engine `run`/`stop`/`kill`/`ssh` this consumes):
   `docs/superpowers/specs/2026-06-24-vzbeam-plan3-run-lifecycle.md`,
   `docs/superpowers/plans/2026-06-24-vzbeam-run-lifecycle.md`.
 - Engine code to match: `lib/vzbeam/sidecar.ex`, `lib/vzbeam/protocol.ex`, `lib/vzbeam/commands/run.ex`
-  (`build_argv`), `lib/vzbeam/commands/new.ex` (restore deps), `lib/vzbeam/cache.ex` (`source`/`url` usage).
+  (`build_argv`), `lib/vzbeam/commands/new.ex` (restore deps), `lib/vzbeam/cache.ex` (`source`/`url` usage),
+  `lib/vzbeam/daemon.ex` (launch-pid capture).
 - The wire oracle: `test/support/fake_vz`.
