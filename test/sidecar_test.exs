@@ -30,7 +30,19 @@ defmodule VzBeam.SidecarTest do
   end
 
   test "check_version accepts protocol 1 (real subprocess, default runner)" do
-    assert :ok = Sidecar.check_version()
+    {:ok, path} = Sidecar.locate()
+    assert :ok = Sidecar.check_version(path)
+  end
+
+  test "check_version validates the given path without re-locating" do
+    parent = self()
+    runner = fn path, ["--version"], _ ->
+      send(parent, {:ran_at, path})
+      {~s({"type":"version","protocol":1}\n), 0}
+    end
+
+    assert :ok = Sidecar.check_version("/explicit/vz", runner)
+    assert_received {:ran_at, "/explicit/vz"}
   end
 
   test "image_info parses the image event (injected runner)" do

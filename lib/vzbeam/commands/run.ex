@@ -28,7 +28,7 @@ defmodule VzBeam.Commands.Run do
          {:ok, share} <- parse_share(opts[:share]),
          {:ok, _keys} <- Keys.ensure(),
          {:ok, vz} <- Sidecar.locate(),
-         :ok <- Sidecar.check_version() do
+         :ok <- Sidecar.check_version(vz) do
       run_log = Path.join(Home.bundle_dir(name), "run.log")
       argv = build_argv(vz, name, m, opts, share)
 

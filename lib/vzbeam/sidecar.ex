@@ -29,28 +29,32 @@ defmodule VzBeam.Sidecar do
 
   @spec call(String.t(), [String.t()], fun) :: {:ok, [Protocol.event()]} | {:error, term}
   def call(subcommand, args, runner \\ &System.cmd/3) do
-    with {:ok, path} <- locate() do
-      {out, status} = runner.(path, [subcommand | args], [])
-      lines = String.split(out, "\n", trim: true)
-      final_newline? = out == "" or String.ends_with?(out, "\n")
+    with {:ok, path} <- locate(), do: call_at(path, subcommand, args, runner)
+  end
 
-      result = Protocol.collect(lines, Map.get(@terminals, subcommand, []), final_newline?)
+  # Invoke an already-located sidecar — skips a second locate/0 when the caller
+  # already holds the path (e.g. `run` locates once, then version-checks it).
+  defp call_at(path, subcommand, args, runner) do
+    {out, status} = runner.(path, [subcommand | args], [])
+    lines = String.split(out, "\n", trim: true)
+    final_newline? = out == "" or String.ends_with?(out, "\n")
 
-      cond do
-        match?({:error, {:vz, _, _, _}}, result) -> result
-        status != 0 -> {:error, {:exit, status}}
-        true ->
-          case result do
-            {:ok, events, _terminal} -> {:ok, events}
-            {:error, _} = err -> err
-          end
-      end
+    result = Protocol.collect(lines, Map.get(@terminals, subcommand, []), final_newline?)
+
+    cond do
+      match?({:error, {:vz, _, _, _}}, result) -> result
+      status != 0 -> {:error, {:exit, status}}
+      true ->
+        case result do
+          {:ok, events, _terminal} -> {:ok, events}
+          {:error, _} = err -> err
+        end
     end
   end
 
-  @spec check_version(fun) :: :ok | {:error, term}
-  def check_version(runner \\ &System.cmd/3) do
-    with {:ok, events} <- call("--version", [], runner),
+  @spec check_version(Path.t(), fun) :: :ok | {:error, term}
+  def check_version(path, runner \\ &System.cmd/3) do
+    with {:ok, events} <- call_at(path, "--version", [], runner),
          {:event, "version", m} <- find(events, "version") do
       if m["protocol"] == @protocol_version,
         do: :ok,
