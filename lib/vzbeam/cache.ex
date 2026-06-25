@@ -88,7 +88,7 @@ defmodule VzBeam.Cache do
     end
   end
 
-  # Plan 2 has no expected size source (image-info carries none); real size/checksum check lands with the live download in Plan 3/4.
+  # No expected size is available (image-info carries none), so only reject an empty file.
   defp size_sane(path) do
     case File.stat(path) do
       {:ok, %{size: s}} when s > 0 -> :ok

@@ -9,22 +9,13 @@ defmodule VzBeam.ManifestTest do
     {:ok, home: home}
   end
 
-  test "write then read round-trips and adds schemaVersion" do
-    :ok = VzBeam.Manifest.write("base", %{"name" => "base", "macAddress" => "5e:aa"})
-    assert {:ok, m} = VzBeam.Manifest.read("base")
-    assert m["name"] == "base"
-    assert m["schemaVersion"] == 1
+  test "read returns the decoded config.json" do
+    File.write!(Path.join([System.get_env("VZBEAM_HOME"), "base", "config.json"]),
+      Jason.encode!(%{"name" => "base", "macAddress" => "5e:aa"}))
+    assert {:ok, %{"name" => "base", "macAddress" => "5e:aa"}} = VzBeam.Manifest.read("base")
   end
 
   test "read of a missing manifest errors" do
     assert {:error, _} = VzBeam.Manifest.read("ghost")
-  end
-
-  test "unknown keys survive a read-modify-write" do
-    :ok = VzBeam.Manifest.write("base", %{"name" => "base", "future" => "keepme"})
-    {:ok, m} = VzBeam.Manifest.read("base")
-    :ok = VzBeam.Manifest.write("base", Map.put(m, "cpuCount", 4))
-    {:ok, m2} = VzBeam.Manifest.read("base")
-    assert m2["future"] == "keepme" and m2["cpuCount"] == 4
   end
 end

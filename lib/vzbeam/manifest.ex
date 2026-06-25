@@ -1,8 +1,6 @@
 defmodule VzBeam.Manifest do
-  @moduledoc "Read/write a bundle's config.json (atomic, schema-stamped)."
+  @moduledoc "Read a bundle's config.json (written by Commands.New at create time)."
   alias VzBeam.Home
-
-  @schema_version 1
 
   @spec path(String.t()) :: Path.t()
   def path(name), do: Path.join(Home.bundle_dir(name), "config.json")
@@ -13,11 +11,5 @@ defmodule VzBeam.Manifest do
          {:ok, map} <- Jason.decode(body) do
       {:ok, map}
     end
-  end
-
-  @spec write(String.t(), map) :: :ok | {:error, term}
-  def write(name, map) when is_map(map) do
-    stamped = Map.put(map, "schemaVersion", @schema_version)
-    VzBeam.AtomicFile.write(path(name), Jason.encode!(stamped, pretty: true))
   end
 end

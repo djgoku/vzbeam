@@ -18,8 +18,6 @@ public func runImageInfo(_ args: [String]) {
 }
 
 private func finishImageInfo(_ result: Result<VZMacOSRestoreImage, Error>, source: String) {
-    // Codex NICE #8: log which queue the handler fired on (validation probe).
-    Wire.log("image-info handler on \(Thread.isMainThread ? "main" : "background") thread")
     switch result {
     case .success(let image):
         let v = image.operatingSystemVersion

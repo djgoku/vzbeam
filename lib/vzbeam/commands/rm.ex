@@ -1,5 +1,5 @@
 defmodule VzBeam.Commands.Rm do
-  @moduledoc "rm <name> — delete a stopped bundle (--force/stop arrive in Plan 3)."
+  @moduledoc "rm <name> — delete a bundle (refuses if running; stop or kill it first)."
   alias VzBeam.{Home, Pidfile}
 
   @spec run([String.t()]) :: {:ok, iodata} | {:error, non_neg_integer, iodata}

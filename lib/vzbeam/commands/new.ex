@@ -4,6 +4,7 @@ defmodule VzBeam.Commands.New do
 
   @reserved ~w(cache keys bin run.lock)
   @gb 1024 * 1024 * 1024
+  @schema_version 1
 
   def run(args), do: run(args, default_deps())
 
@@ -109,7 +110,7 @@ defmodule VzBeam.Commands.New do
   end
 
   defp write_manifest(dir, map) do
-    AtomicFile.write(Path.join(dir, "config.json"), Jason.encode!(Map.put(map, "schemaVersion", 1), pretty: true))
+    AtomicFile.write(Path.join(dir, "config.json"), Jason.encode!(Map.put(map, "schemaVersion", @schema_version), pretty: true))
   end
 
   defp create_sparse(path, size) do

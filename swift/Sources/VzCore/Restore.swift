@@ -44,7 +44,7 @@ final class RestoreSession {
         }
         if let want = diskSize, let attrs = try? FileManager.default.attributesOfItem(atPath: disk),
            let have = (attrs[.size] as? NSNumber)?.uint64Value, have != want {
-            return fail(domain: "vz", code: 1, "disk.img size \(have) != expected \(want)")  // verify-only (Codex #7)
+            return fail(domain: "vz", code: 1, "disk.img size \(have) != expected \(want)")  // verify only; never resize
         }
         let hw = req.hardwareModel
         let mid = VZMacMachineIdentifier()
