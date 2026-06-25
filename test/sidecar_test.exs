@@ -20,6 +20,18 @@ defmodule VzBeam.SidecarTest do
     :ok
   end
 
+  # Write a throwaway sidecar that emits `body` (sh) and point VZBEAM_VZ at it.
+  defp fake_vz_emitting(body) do
+    path = Path.join(System.tmp_dir!(), "fake_vz_emit_#{System.unique_integer([:positive])}")
+    File.write!(path, "#!/bin/sh\n" <> body)
+    File.chmod!(path, 0o755)
+    System.put_env("VZBEAM_VZ", path)
+    on_exit(fn -> File.rm(path) end)
+    :ok
+  end
+
+  @restore_args ~w(--ipsw x --disk d --aux a --disk-size 1 --cpu 1 --mem 1)
+
   test "locate finds the binary via VZBEAM_VZ" do
     assert {:ok, @fake} = Sidecar.locate()
   end
@@ -88,5 +100,37 @@ defmodule VzBeam.SidecarTest do
   test "restore/1 returns the restored identity over the stream transport" do
     assert {:ok, %{machine_identifier: "RID", build: "25F80", version: "26.5.1"}} =
              Sidecar.restore(%{ipsw: "x", disk: "d", aux: "a", disk_size: 1, cpu: 1, mem: 1})
+  end
+
+  test "stream rejects a malformed line even when a terminal arrives" do
+    fake_vz_emitting("""
+    echo 'this is not json'
+    echo '{"type":"restored","machineIdentifier":"RID","hardwareModel":"HW","macAddress":"m","version":"26","build":"X"}'
+    exit 0
+    """)
+
+    assert {:error, {:protocol, :corrupt_stream}} = Sidecar.stream("restore", @restore_args)
+  end
+
+  test "stream rejects an oversize line (:noeol) even when a terminal arrives" do
+    # A >1 MiB line is delivered as a {:noeol, _} fragment by the port's line mode;
+    # the real vz never emits one, so it signals a corrupt/runaway stream.
+    fake_vz_emitting("""
+    echo '{"type":"restored","machineIdentifier":"RID","hardwareModel":"HW","macAddress":"m","version":"26","build":"X"}'
+    head -c 1100000 /dev/zero | tr '\\0' 'A'
+    exit 0
+    """)
+
+    assert {:error, {:protocol, :corrupt_stream}} = Sidecar.stream("restore", @restore_args)
+  end
+
+  test "stream: an explicit error event still dominates a malformed line" do
+    fake_vz_emitting("""
+    echo 'garbage'
+    echo '{"type":"error","domain":"VZErrorDomain","code":6,"message":"max VMs"}'
+    exit 1
+    """)
+
+    assert {:error, {:vz, "VZErrorDomain", 6, "max VMs"}} = Sidecar.stream("restore", @restore_args)
   end
 end
