@@ -84,7 +84,16 @@ final class RestoreSession {
                     "build": image.buildVersion,
                 ]); exit(0)
             case .failure(let e):
-                self?.fail(domain: "VZErrorDomain", code: (e as NSError).code, e.localizedDescription)
+                let ns = e as NSError
+                // VZError 10007 ("Installation failed.") is opaque; the actionable reason is the
+                // underlying error (e.g. MobileRestore codes). Fold it into the surfaced message.
+                let detail: String
+                if let under = ns.userInfo[NSUnderlyingErrorKey] as? NSError {
+                    detail = "\(ns.localizedDescription) (\(under.domain) \(under.code): \(under.localizedDescription))"
+                } else {
+                    detail = ns.localizedDescription
+                }
+                self?.fail(domain: ns.domain, code: ns.code, detail)
             }
         }
     }
