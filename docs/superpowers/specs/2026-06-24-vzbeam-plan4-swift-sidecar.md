@@ -301,10 +301,12 @@ everything after a configured base is SSH-automatable.
 
 ## 8. Testing strategy
 
-- **Swift unit tests (build host, `swift test`):** `Args` parser; `Wire` emits exactly-one-line compact JSON
-  the `Protocol` decoder accepts (cross-checked by piping `vz` output through the engine decoder); `reid`
-  minting; `image-info` shape/error; `validateTag` rules; the async-queue + flush-before-exit probe (§7).
-  XCTest via `swift test` works under CLT (no full Xcode).
+- **Swift unit checks (build host, `swift run vzcheck`):** a plain assertion-executable target `vzcheck`,
+  NOT XCTest/swift-testing — `XCTest.framework` is absent under CLT-only Swift 6.3.2 and the swift-testing
+  workaround needs a custom toolset + hardcoded rpaths (validated Task 3); `vzcheck` runs identically on the
+  build host and the Mac with no toolset/flags. Checks: `Args` parser; `Wire.encode` produces
+  exactly-one-line compact JSON the `Protocol` decoder accepts; `reid` minting; `validateTag` rules.
+  `image-info` shape/error and the async-queue + flush-before-exit probe are subprocess smokes (§7).
 - **Elixir lockstep tests (build host):** the `build_argv` argv assertion (§5 item 2, required); updated
   `make_bundle`; the `fake_vz` `image-info` `source` change (§6.3). The error-string change pins no test
   (none exists). Suite stays at 100.

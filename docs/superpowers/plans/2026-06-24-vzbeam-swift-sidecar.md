@@ -21,6 +21,7 @@
 - **Keep `mix test` green** and **independent of a built sidecar** — the default suite uses `test/support/fake_vz`; no default test may require the real `vz`.
 - **Per-machine build + sign** — `mix vz.build` runs on the build host *and* the Mac. (spec §2/§10)
 - **`swift-tools-version:5.9`** — compiles on both Swift 6.3.2 (here) and 6.4 (Mac); avoids Swift-6 strict-concurrency defaults.
+- **Swift green-bucket checks run via `swift run vzcheck`** (a plain assertion-executable target), NOT XCTest/`swift test` — `XCTest.framework` is absent under CLT-only Swift 6.3.2 (validated Task 3, controller decision). Any task below shown with an `XCTest`/`swift test` block instead ADDS its assertions as check-functions to `swift/Sources/vzcheck/main.swift` and verifies with `swift run vzcheck` (no toolset, no flags — portable to the Mac).
 
 ---
 
