@@ -59,3 +59,12 @@ The 27.0-seed Mac couldn't restore (MobileRestore 4014). On a **release-macOS** 
 **HW bugs found + fixed by this suite:** (1) `VZMacOSInstaller` created on a background queue → SIGTRAP (`8bea74c`); (2) `--gui` window had no Dock icon (`.accessory`→`.regular`, `f65f196`); (3) opaque `VZError 10007` → surface the underlying error (`8a0d1f0`); (4) `stop` hung 60s on a sudo-password failure → fail fast (`3ab8c65`). Plus the engine `VZError 6`→cap-error mapping (`aefeab0`) confirmed end-to-end.
 
 **Conclusion:** vzbeam Plan 4 is functionally complete and hardware-validated on release-macOS Apple Silicon.
+
+## Codex whole-branch review (2026-06-25, session 019eff76)
+
+Independent Codex adversarial review of `main...HEAD` (after an earlier `adversarial-review` run stalled on the read-only sandbox; re-run via `task` mode with git-only reads). **No blocking defects.** Areas (wire shapes/events, build_argv seam, run/restore lifecycle incl. main-queue restore + finishOnce + VZError-6 mapping, provisioning, Plan 1–3 regression): no defect except the items below.
+
+- **#1 Wire key order (should-fix) — non-defect, dispositioned.** Swift emits `JSONSerialization(.sortedKeys)`; `fake_vz`'s hardcoded JSON differs in key *order*. `VzBeam.Protocol` decodes via `Jason.decode` into a map (order-independent), so the engine parses both identically. The spec's "byte-for-byte" means *semantically matches the decoder*, not literal bytes. No change.
+- **#2 stream/4 silently skips malformed/`:noeol` lines (should-fix) — deferred (known).** Documented Plan-3 Minor: the real `vz` only emits valid NDJSON via `Wire`, and `<1 MiB` lines never hit `:noeol`, so it's unreachable in normal operation. Defensive hardening for a future pass.
+- **#3 `mix vz.build` crashed via `{_,0}=` on failures (nice) — FIXED (`c546615`).** Now `Mix.raise`s with the command, exit status, and output.
+- **#4 `run` locates `vz` then `check_version` locates again (nice) — deferred.** `locate/0` is deterministic; validated-path ≠ launched-path is near-impossible in practice.
