@@ -188,7 +188,7 @@ defmodule VzBeam.Commands.Run do
   defp error({:error, :at_capacity}), do: {:error, 1, "run: at capacity (2 VMs already running); stop one first\n"}
   defp error({:error, :lock_timeout}), do: {:error, 1, ["run: another `vzbeam run` is in progress; retry\n"]}
   defp error({:error, :lock_corrupt}), do: {:error, 1, ["run: ", VzBeam.Lock.path(), " is unreadable; remove it if stale\n"]}
-  defp error({:error, :not_found}), do: {:error, 1, "run: sidecar not found; build it (`vzbeam build-sidecar`)\n"}
+  defp error({:error, :not_found}), do: {:error, 1, "run: sidecar not found; build it (`mix vz.build`)\n"}
   defp error({:error, :no_equals}), do: {:error, 2, "run: --share must be tag=/path\n"}
   defp error({:error, :empty_tag}), do: {:error, 2, "run: --share tag is empty\n"}
   defp error({:error, :tag_too_long}), do: {:error, 2, "run: --share tag exceeds 36 bytes\n"}

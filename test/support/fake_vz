@@ -1,7 +1,10 @@
 #!/bin/sh
 case "$1" in
   --version)   echo '{"type":"version","protocol":1}'; exit 0 ;;
-  image-info)  echo '{"type":"image","version":"26.5.1","build":"25F80","url":"file:///x.ipsw","source":"latest"}'; exit 0 ;;
+  image-info)
+    if [ "$2" = "latest" ]; then src=latest; else src=local; fi
+    echo "{\"type\":\"image\",\"version\":\"26.5.1\",\"build\":\"25F80\",\"url\":\"file:///x.ipsw\",\"source\":\"$src\"}"
+    exit 0 ;;
   reid)        echo '{"type":"reid","machineIdentifier":"NEW-ID","macAddress":"5e:11:22:33:44:55"}'; exit 0 ;;
   restore)
     echo '{"type":"progress","fraction":0.5}'
