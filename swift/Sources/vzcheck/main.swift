@@ -26,5 +26,10 @@ if let line = Wire.encode(["type": "version", "protocol": 1]) {
     } else { check("wire.parse", false) }
 } else { check("wire.encode", false) }
 
+// --- ReID ---
+let (mid, mac) = mintIdentity()
+check("reid.mid.base64", !mid.isEmpty && Data(base64Encoded: mid) != nil)
+check("reid.mac.format", mac.range(of: #"^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$"#, options: .regularExpression) != nil)
+
 FileHandle.standardError.write(Data((failures == 0 ? "ALL CHECKS PASS\n" : "\(failures) CHECK(S) FAILED\n").utf8))
 exit(failures == 0 ? 0 : 1)
