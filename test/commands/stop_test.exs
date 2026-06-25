@@ -40,6 +40,15 @@ defmodule VzBeam.Commands.StopTest do
     assert IO.iodata_to_binary(msg) =~ "kill"
   end
 
+  test "reports a clear error (no reap hang) when guest sudo needs a password" do
+    ssh = fn _ -> {"sudo: a password is required\n", 1} end
+    # reap_ms is large; the auth-failure short-circuit must return immediately, not wait it out.
+    assert {:error, 1, msg} = Stop.run(["dev"], %{ssh: ssh, leases: fn -> leases() end, reap_ms: 60_000})
+    m = IO.iodata_to_binary(msg)
+    assert m =~ "passwordless sudo" and m =~ "kill"
+    assert File.exists?(VzBeam.Pidfile.path("dev"))  # VM left running (not reaped)
+  end
+
   test "refuses a stopped VM and a missing lease" do
     File.rm(VzBeam.Pidfile.path("dev"))
     assert {:error, 1, m1} = Stop.run(["dev"], %{ssh: fn _ -> {"", 0} end, leases: fn -> "" end, reap_ms: 0})
