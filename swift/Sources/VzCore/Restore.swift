@@ -24,9 +24,14 @@ final class RestoreSession {
         let diskSize = a.value("disk-size").flatMap(UInt64.init)
         let ipswURL = URL(fileURLWithPath: ipsw)
         VZMacOSRestoreImage.load(from: ipswURL) { [weak self] result in
-            switch result {
-            case .failure(let e): self?.fail(domain: "VZErrorDomain", code: (e as NSError).code, e.localizedDescription)
-            case .success(let image): self?.install(image, ipswURL, disk, aux, diskSize, cpu, mem)
+            // load's completion fires on a background queue, but VZMacOSInstaller /
+            // VZVirtualMachine assert they are created and used on the VM's (main) queue
+            // (dispatch_assert_queue trap otherwise). Hop to main before creating them.
+            DispatchQueue.main.async {
+                switch result {
+                case .failure(let e): self?.fail(domain: "VZErrorDomain", code: (e as NSError).code, e.localizedDescription)
+                case .success(let image): self?.install(image, ipswURL, disk, aux, diskSize, cpu, mem)
+                }
             }
         }
         RunLoop.main.run()
