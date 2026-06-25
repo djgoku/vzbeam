@@ -161,6 +161,20 @@ defmodule VzBeam.Commands.SetTest do
     assert {:error, 2, _} = Set.run(["dev", "--cpu", "0"])
     assert {:error, 2, _} = Set.run(["dev", "--mem-gb", "0"])
   end
+
+  test "mem-only leaves cpu unchanged and still prints both", %{home: home} do
+    assert {:ok, msg} = Set.run(["dev", "--mem-gb", "16"])
+    assert IO.iodata_to_binary(msg) =~ "cpu=4 mem=16G"
+    assert manifest(home)["cpuCount"] == 4
+  end
+
+  test "surfaces a write failure as exit 1", %{home: home} do
+    dir = Path.join(home, "dev")
+    File.chmod!(dir, 0o500)                     # no write -> the atomic write fails
+    on_exit(fn -> File.chmod(dir, 0o700) end)   # restore so setup's rm_rf can clean up
+    assert {:error, 1, msg} = Set.run(["dev", "--cpu", "2"])
+    assert IO.iodata_to_binary(msg) =~ "set failed"
+  end
 end
 ```
 
@@ -432,6 +446,10 @@ defmodule VzBeam.Commands.DisplaysTest do
     assert {:ok, out} = Displays.run([], fn -> "" end)
     assert IO.iodata_to_binary(out) =~ "no display detected"
   end
+
+  test "rejects extra args (exit 2), consistent with other verbs" do
+    assert {:error, 2, _} = Displays.run(["extra"], fn -> @json end)
+  end
 end
 ```
 
@@ -450,12 +468,14 @@ defmodule VzBeam.Commands.Displays do
   @spec run([String.t()]) :: {:ok, iodata} | {:error, non_neg_integer, iodata}
   def run(args), do: run(args, &profiler/0)
 
-  def run(_args, profiler) do
+  def run([], profiler) do
     case Displays.parse(profiler.()) do
       [] -> {:ok, "no display detected; vzbeam default is 1920x1200\n"}
       displays -> {:ok, [Enum.map(displays, &line/1), suggest(displays)]}
     end
   end
+
+  def run(_args, _profiler), do: {:error, 2, "usage: vzbeam displays\n"}
 
   defp line(%{name: n, width: w, height: h} = d) do
     looks = if d.looks_like, do: ["   (looks like ", d.looks_like, ")"], else: []
@@ -490,7 +510,8 @@ and add to the `@usage` Commands block (after the `run` line):
 - [ ] **Step 5: Add the CLI test** — append to `test/cli_test.exs` before the final `end`:
 
 ```elixir
-  test "displays appears in help" do
+  test "displays dispatches (arity guard) and appears in help" do
+    assert {:error, 2, _} = VzBeam.CLI.run(["displays", "extra"])  # routed to the verb, not help
     assert IO.iodata_to_binary(elem(VzBeam.CLI.run(["--help"]), 1)) =~ "displays"
   end
 ```
@@ -531,5 +552,6 @@ mise exec -- mix escript.build && ./vzbeam displays
   (Tasks 3–5), Mac validation (Task 6), all CLI/error-code rules, and every spec test case are covered.
 - **Phase split:** Tasks 1–2 are fully green-bucket; Tasks 3–6 require the Mac (Task 3 captures the fixture
   the green-bucket Tasks 4–5 build against).
-- **Risk:** the only schema dependency is `system_profiler`'s JSON keys — isolated to `Displays.parse/1`,
-  defended (tolerates missing fields → `[]` → friendly fallback), and pinned by the Task-3 fixture.
+- **Risk:** the only schema dependency is `system_profiler`'s JSON keys — isolated to `Displays.parse/1`
+  and defended (tolerates missing fields → `[]` → friendly fallback). The Task-3 manual schema check is the
+  primary guard; the captured fixture then exercises the parser, and Task 6 confirms live on the Mac.
