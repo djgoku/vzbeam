@@ -89,7 +89,7 @@ final class RunSession: NSObject, VZVirtualMachineDelegate {
 
     private func runGUI(vm: VZVirtualMachine) {
         let app = NSApplication.shared
-        app.setActivationPolicy(.accessory)
+        app.setActivationPolicy(.regular)   // .regular gives a Dock icon so the first-boot window is findable
         let view = VZVirtualMachineView(); view.virtualMachine = vm
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: max(opts.width / 2, 640), height: max(opts.height / 2, 400)),
                            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
