@@ -8,7 +8,7 @@ public func dispatch(_ argv: [String]) {
     case "--version": runVersion(); exit(0)
     case "reid": runReid(); exit(0)
     case "image-info": runImageInfo(rest)
-    // restore/run wired in later tasks:
+    case "restore": runRestore(rest)
     default: Wire.log("vz: unknown subcommand \(sub)"); exit(2)
     }
 }
