@@ -4,7 +4,7 @@ import Foundation
 public func runImageInfo(_ args: [String]) {
     let a = Args(args)
     guard let spec = a.positionals.first else {
-        Wire.emit(["type": "error", "domain": "vz", "code": 2, "message": "image-info needs <latest|PATH>"])
+        Wire.emitError(domain: "vz", code: 2, "image-info needs <latest|PATH>")
         exit(2)
     }
     if spec == "latest" {
@@ -30,8 +30,8 @@ private func finishImageInfo(_ result: Result<VZMacOSRestoreImage, Error>, sourc
         ])
         exit(0)
     case .failure(let e):
-        Wire.emit(["type": "error", "domain": "VZErrorDomain", "code": (e as NSError).code,
-                   "message": e.localizedDescription])
+        let f = Wire.errorFields(e)
+        Wire.emitError(domain: f.domain, code: f.code, f.message)
         exit(1)
     }
 }

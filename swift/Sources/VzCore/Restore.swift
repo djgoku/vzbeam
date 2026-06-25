@@ -29,7 +29,7 @@ final class RestoreSession {
             // (dispatch_assert_queue trap otherwise). Hop to main before creating them.
             DispatchQueue.main.async {
                 switch result {
-                case .failure(let e): self?.fail(domain: "VZErrorDomain", code: (e as NSError).code, e.localizedDescription)
+                case .failure(let e): self?.fail(e)
                 case .success(let image): self?.install(image, ipswURL, disk, aux, diskSize, cpu, mem)
                 }
             }
@@ -51,7 +51,7 @@ final class RestoreSession {
         let mac = VZMACAddress.randomLocallyAdministered()
         let auxStorage: VZMacAuxiliaryStorage
         do { auxStorage = try VZMacAuxiliaryStorage(creatingStorageAt: URL(fileURLWithPath: aux), hardwareModel: hw, options: []) }
-        catch { return fail(domain: "VZErrorDomain", code: (error as NSError).code, "aux create failed: \(error.localizedDescription)") }
+        catch { let f = Wire.errorFields(error); return fail(domain: f.domain, code: f.code, "aux create failed: \(f.message)") }
 
         let platform = VZMacPlatformConfiguration()
         platform.hardwareModel = hw; platform.machineIdentifier = mid; platform.auxiliaryStorage = auxStorage
@@ -63,7 +63,7 @@ final class RestoreSession {
             let d = try VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: disk), readOnly: false)
             cfg.storageDevices = [VZVirtioBlockDeviceConfiguration(attachment: d)]
             try cfg.validate()
-        } catch { return fail(domain: "VZErrorDomain", code: (error as NSError).code, error.localizedDescription) }
+        } catch { return fail(error) }
 
         let vm = VZVirtualMachine(configuration: cfg); self.vm = vm
         let inst = VZMacOSInstaller(virtualMachine: vm, restoringFromImageAt: ipswURL); self.installer = inst
@@ -84,21 +84,17 @@ final class RestoreSession {
                     "build": image.buildVersion,
                 ]); exit(0)
             case .failure(let e):
-                let ns = e as NSError
-                // VZError 10007 ("Installation failed.") is opaque; the actionable reason is the
-                // underlying error (e.g. MobileRestore codes). Fold it into the surfaced message.
-                let detail: String
-                if let under = ns.userInfo[NSUnderlyingErrorKey] as? NSError {
-                    detail = "\(ns.localizedDescription) (\(under.domain) \(under.code): \(under.localizedDescription))"
-                } else {
-                    detail = ns.localizedDescription
-                }
-                self?.fail(domain: ns.domain, code: ns.code, detail)
+                // VZError 10007 ("Installation failed.") is opaque; errorFields folds the
+                // underlying MobileRestore reason into the message.
+                self?.fail(e)
             }
         }
     }
 
+    private func fail(_ error: Error) {
+        let f = Wire.errorFields(error); fail(domain: f.domain, code: f.code, f.message)
+    }
     private func fail(domain: String, code: Int, _ message: String) {
-        Wire.emit(["type": "error", "domain": domain, "code": code, "message": message]); exit(1)
+        Wire.emitError(domain: domain, code: code, message); exit(1)
     }
 }

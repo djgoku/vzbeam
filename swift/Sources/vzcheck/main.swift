@@ -27,6 +27,25 @@ if let line = Wire.encode(["type": "version", "protocol": 1]) {
     } else { check("wire.parse", false) }
 } else { check("wire.encode", false) }
 
+// --- Wire.errorFields (Error -> domain/code/message mapping) ---
+let cfgF = Wire.errorFields(ConfigError.badField("mac"))
+check("err.config.domain", cfgF.domain == "vz")
+check("err.config.code", cfgF.code == 2)
+check("err.config.message", cfgF.message == "invalid mac")
+
+let plainF = Wire.errorFields(NSError(domain: "VZErrorDomain", code: 6,
+                                      userInfo: [NSLocalizedDescriptionKey: "max VMs"]))
+check("err.framework.domain", plainF.domain == "VZErrorDomain")
+check("err.framework.code", plainF.code == 6)
+check("err.framework.message", plainF.message == "max VMs")
+
+let underlying = NSError(domain: "com.apple.MobileDevice.MobileRestore", code: 4014,
+                         userInfo: [NSLocalizedDescriptionKey: "DFU"])
+let wrappedF = Wire.errorFields(NSError(domain: "VZErrorDomain", code: 10007,
+                                        userInfo: [NSLocalizedDescriptionKey: "Installation failed.",
+                                                   NSUnderlyingErrorKey: underlying]))
+check("err.underlying.folds", wrappedF.message.contains("Installation failed.") && wrappedF.message.contains("4014"))
+
 // --- ReID ---
 let (mid, mac) = mintIdentity()
 check("reid.mid.base64", !mid.isEmpty && Data(base64Encoded: mid) != nil)
