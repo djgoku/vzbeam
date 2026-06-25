@@ -1,5 +1,6 @@
 import VzCore
 import Foundation
+import Virtualization
 
 var failures = 0
 func check(_ name: String, _ cond: Bool) {
@@ -30,6 +31,11 @@ if let line = Wire.encode(["type": "version", "protocol": 1]) {
 let (mid, mac) = mintIdentity()
 check("reid.mid.base64", !mid.isEmpty && Data(base64Encoded: mid) != nil)
 check("reid.mac.format", mac.range(of: #"^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$"#, options: .regularExpression) != nil)
+
+// --- validateTag (VZVirtioFileSystemDeviceConfiguration) ---
+check("tag.valid", (try? VZVirtioFileSystemDeviceConfiguration.validateTag("share")) != nil)
+check("tag.empty", (try? VZVirtioFileSystemDeviceConfiguration.validateTag("")) == nil)
+check("tag.toolong", (try? VZVirtioFileSystemDeviceConfiguration.validateTag(String(repeating: "a", count: 37))) == nil)
 
 FileHandle.standardError.write(Data((failures == 0 ? "ALL CHECKS PASS\n" : "\(failures) CHECK(S) FAILED\n").utf8))
 exit(failures == 0 ? 0 : 1)
