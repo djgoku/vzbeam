@@ -25,6 +25,25 @@
   items.** Confirmed A1 precedence (no `{:ok}` on a corrupt-with-terminal stream; no false-positive on a
   valid stream), `call_at/4` behavior-equivalence, no stale `check_version` callers, C8/`new` parity, C6 safety.
 
+## A2 — graceful `stop` / `guestDidStop`: HW-validated (2026-06-25)
+
+Validated on the release-macOS Apple Silicon Mac (`dj_goku@Mac`, test home `~/vzbeam-hw`), after granting
+the guest the one-time NOPASSWD rule (`/etc/sudoers.d/vzbeam-shutdown`, README First boot). Sequence:
+`run base --headless` → `ssh base` (add the rule) → `stop base` → `stopped base`; `ls` shows `STATUS=stopped`.
+
+The terminal `run.log` is the proof:
+
+```
+{"pid":48787,"type":"started"}
+{"type":"guest_stopped"}      # exactly one; no "error" event; grep -c => 1
+```
+
+So the guest-initiated `shutdown -h now` (via `stop`'s `sudo -n shutdown`) fired the `guestDidStop`
+delegate → `finishStopped` → `finishOnce`, emitting the terminal event **once** (idempotent) before
+`exit(0)`; `stop` then reaped the pidfile. This was the one lifecycle path Plan 4 left operator-gated; it
+shares `kill`'s already-proven `finishOnce`. **Zero code diff — the path was already correct.** With this,
+every `run`/`stop`/`kill` lifecycle path is HW-proven.
+
 ## Validate-don't-assume corrections (the backlog was wrong on three points)
 
 - **C6 "compiler warning" — false.** The release build emits **no** warning for the unused import on this
@@ -41,9 +60,9 @@
 
 ## Deliberately deferred (re-confirmed, left as-is)
 
-- **A2 graceful `stop` / `guestDidStop` HW validation** — out of scope this pass. A release-macOS Apple
-  Silicon Mac is available, so this can be picked up later: add the guest NOPASSWD `/sbin/shutdown` rule,
-  run `vzbeam stop <name>`, confirm `guestDidStop` → exactly one `guest_stopped` → exit 0.
+(A2 — graceful `stop` / `guestDidStop` HW validation — was deferred mid-pass but then **completed**; see
+the "A2 … HW-validated" section above.)
+
 - **B4 SIGTERM race** (`Run.swift installSignalTrap`) — fail-safe (SIG_IGN-first; engine escalates
   SIGTERM→SIGKILL; `kill` never fires before `started`). Leave.
 - **B5 Wire key-order vs `fake_vz`** — non-defect; `VzBeam.Protocol` decodes order-independently. Leave.

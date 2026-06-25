@@ -54,7 +54,7 @@ The 27.0-seed Mac couldn't restore (MobileRestore 4014). On a **release-macOS** 
 | virtiofs `--share` bidirectional round-trip | ✅ |
 | `kill` (SIGTERM trap → `vm.stop()` → single `guest_stopped`) | ✅ |
 | 2-VM cap (a) engine pre-check / (b) framework `VZError 6` → mapped to cap error | ✅ / ✅ (proven via run.log `code:6`) |
-| graceful `stop` (guest `shutdown` → `guestDidStop`) | ⚠️ requires guest NOPASSWD shutdown (documented in README First boot); `stop` now fails fast with a clear message when it's missing (`3ab8c65`). The `guestDidStop`→`finishStopped` path shares `kill`'s validated finish; the guest-shutdown trigger is operator-gated. |
+| graceful `stop` (guest `shutdown` → `guestDidStop`) | ✅ **HW-validated 2026-06-25** (deferred to Plan 5). With the guest NOPASSWD rule in place, `stop base` → `stopped base`; `run.log` shows `started`→`guest_stopped` (exactly one, no error). See `…/results/2026-06-25-vzbeam-plan5-hardening.md`. (`stop` still fails fast with a clear message when the rule is missing, `3ab8c65`.) |
 
 **HW bugs found + fixed by this suite:** (1) `VZMacOSInstaller` created on a background queue → SIGTRAP (`8bea74c`); (2) `--gui` window had no Dock icon (`.accessory`→`.regular`, `f65f196`); (3) opaque `VZError 10007` → surface the underlying error (`8a0d1f0`); (4) `stop` hung 60s on a sudo-password failure → fail fast (`3ab8c65`). Plus the engine `VZError 6`→cap-error mapping (`aefeab0`) confirmed end-to-end.
 
