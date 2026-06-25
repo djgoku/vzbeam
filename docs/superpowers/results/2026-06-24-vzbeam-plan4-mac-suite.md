@@ -1,0 +1,35 @@
+# vzbeam Plan 4 — HW-gated Mac integration suite: results
+
+- **Date:** 2026-06-24
+- **Mac:** `dj_goku@10.5.0.48` — `hw.model=Mac17,5`, chip reports `Apple A18 Pro`, macOS 27.0 (seed `26A5368g`), `kern.hv_support=1`, `hv_vmm_present=0`. Swift 6.4 + CLT (SDK 27), Elixir 1.20.1/OTP29 via mise.
+- **Method:** develop + green-bucket-validate on the build host; `rsync` tree → Mac; run boot-dependent steps over SSH. Test home: `$HOME/vzbeam-hw`.
+- **Status:** autonomous-over-SSH steps DONE; boot-dependent steps (restore → first-boot → …) PENDING.
+
+## Build host (green bucket) — DONE
+- `mix test`: **102 passed**. `swift run vzcheck`: **13/13**. `swift build -c release`: **clean** (no warnings).
+- Provisioning pipeline (`mix vz.build` → signed `vz` → `Sidecar.locate`/`check_version`): green.
+- escript e2e vs fake: `new --image` (restore) → clone → run×2 → **2-VM cap refuses the 3rd** → kill → all stopped.
+
+## Mac suite (over SSH)
+
+### ✅ Step 1 — `mix vz.build` on the Mac (per-machine build + sign)
+- `swift build -c release` Build complete (59.76s); installed → `~/vzbeam-hw/bin/vz`.
+- `vz --version` → `{"protocol":1,"type":"version"}`.
+- `codesign -d --entitlements` → `com.apple.security.virtualization` embedded. ✔
+- Note: two benign `ld: warning: search path ... /Developer/usr/lib not found` on `vzcheck-product` (Swift 6.4 CLT linker noise; build completes, binary runs).
+
+### ✅ `reid` on real Apple Silicon
+- `vz reid` → minted `{"macAddress":"c2:7d:a5:2e:d5:74","machineIdentifier":"<b64>","type":"reid"}`. ✔
+
+### ✅ Step 2 — `image-info` on the Mac
+- `vz image-info latest` → **catalog reachable**: `{"version":"26.5.1","build":"25F80","source":"latest","url":"https://updates.cdn-apple.com/.../UniversalMac_26.5.1_25F80_Restore.ipsw"}`. ✔ (Unreachable from the build host last session; works on the Mac.)
+- Handler confirmed firing on a background thread (matches the build-host probe).
+- Disk free: 369 GiB (ample for IPSW + restore).
+
+### ⏳ Step 3 — `fetch` (PENDING) — downloads ~16 GB IPSW from the confirmed URL.
+
+### ⏳ Step 4 — `restore` (`new base --image latest`) (PENDING) — **the capability moment**: proves `VZMacOSRestoreImage.mostFeaturefulSupportedConfiguration` is non-nil on Mac17,5/A18-Pro (i.e. macOS-guest virtualization is supported), then a real `VZMacOSInstaller` install. Automatable over SSH (no GUI).
+
+### ⏳ Step 5 — first boot `run base --gui` (PENDING) — **⚠️ manual GUI checkpoint** on the Mac's display: complete Setup Assistant (create `admin`, enable Remote Login), then the one-time `ssh-copy-id`.
+
+### ⏳ Steps 6–9 (PENDING) — clone + headless run + `ip`/`bridge100`/`ssh`; `--share` round-trip; `stop`/`kill` (single terminal event); 2-VM cap (engine pre-check + direct-`vz run` `VZError 6`); `rm` cleanup.
