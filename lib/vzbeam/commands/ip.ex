@@ -11,7 +11,7 @@ defmodule VzBeam.Commands.Ip do
          ip when is_binary(ip) <- Leases.lookup_ip(read_leases.(), mac) do
       {:ok, [ip, "\n"]}
     else
-      nil -> {:error, 1, ["no lease for ", name, "\n"]}
+      nil -> {:error, 1, ["ip: no DHCP lease yet for ", name, " (is it networked? bridge100)\n"]}
       {:error, _} -> {:error, 1, ["no such bundle: ", name, "\n"]}
       _ -> {:error, 1, ["bundle ", name, " has no macAddress\n"]}
     end

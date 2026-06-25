@@ -44,7 +44,7 @@ defmodule VzBeam.Commands.Stop do
 
   defp error({:error, :no_such_bundle}), do: {:error, 1, "stop: no such bundle\n"}
   defp error({:error, :not_running}), do: {:error, 1, "stop: not running\n"}
-  defp error({:error, :no_lease}), do: {:error, 1, "stop: no DHCP lease yet (is it networked?)\n"}
+  defp error({:error, :no_lease}), do: {:error, 1, "stop: no DHCP lease yet (is it networked? bridge100)\n"}
   defp error({:error, reason}), do: {:error, 1, ["stop failed: ", inspect(reason), "\n"]}
 
   defp default_deps do

@@ -25,7 +25,7 @@ defmodule VzBeam.CacheTest do
     assert [%{"build" => "25F80"}] = Cache.list()
   end
 
-  test "ensure reconciles an orphaned final file into the index (finding #1)" do
+  test "ensure reconciles an orphaned final file into the index" do
     File.mkdir_p!(Cache.dir())
     File.write!(Path.join(Cache.dir(), "25F80.ipsw"), "ORPHAN")
     assert {:ok, :reconciled, e} = Cache.ensure("/tmp/x.ipsw", deps())
@@ -33,15 +33,15 @@ defmodule VzBeam.CacheTest do
     assert {:ok, _} = Cache.lookup("25F80")
   end
 
-  test "ensure rejects an unsafe build token (finding #7)" do
+  test "ensure rejects an unsafe build token" do
     assert {:error, :bad_build_token} = Cache.ensure("/tmp/x.ipsw", deps("../evil"))
   end
 
-  test "ensure clears stale *.pending files (finding #1)" do
+  test "ensure leaves unrelated *.pending files alone (no concurrent-fetch sweep)" do
     File.mkdir_p!(Cache.dir())
     File.write!(Path.join(Cache.dir(), "OLD.ipsw.99.pending"), "partial")
     assert {:ok, :fetched, _} = Cache.ensure("/tmp/x.ipsw", deps())
-    refute File.exists?(Path.join(Cache.dir(), "OLD.ipsw.99.pending"))
+    assert File.exists?(Path.join(Cache.dir(), "OLD.ipsw.99.pending"))
   end
 
   test "ensure creates the cache dir before copying (real cp -c)" do

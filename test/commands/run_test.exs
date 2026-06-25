@@ -33,6 +33,11 @@ defmodule VzBeam.Commands.RunTest do
     assert IO.iodata_to_binary(msg) =~ "unknown option"
   end
 
+  test "rejects --gui and --headless together" do
+    assert {:error, 2, msg} = Run.run(["dev", "--gui", "--headless"], deps(fn _, _ -> {:ok, 999_999} end))
+    assert IO.iodata_to_binary(msg) =~ "mutually exclusive"
+  end
+
   test "refuses a missing bundle" do
     assert {:error, 1, msg} = Run.run(["ghost"], deps(fn _, _ -> {:ok, 1} end))
     assert IO.iodata_to_binary(msg) =~ "no such bundle"

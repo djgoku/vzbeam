@@ -33,7 +33,6 @@ defmodule VzBeam.Cache do
   def ensure(spec, deps \\ default_deps()) do
     with {:ok, info} <- deps.image_info.(spec),
          :ok <- validate_build(info.build) do
-      clear_stale_pending()
       final = Path.join(dir(), "#{info.build}.ipsw")
 
       case lookup(info.build) do
@@ -75,16 +74,6 @@ defmodule VzBeam.Cache do
         :ok -> {:ok, entry}
         err -> err
       end
-    end
-  end
-
-  defp clear_stale_pending do
-    case File.ls(dir()) do
-      {:ok, entries} ->
-        entries
-        |> Enum.filter(&String.ends_with?(&1, ".pending"))
-        |> Enum.each(&File.rm_rf(Path.join(dir(), &1)))
-      _ -> :ok
     end
   end
 

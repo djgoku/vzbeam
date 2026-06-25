@@ -12,13 +12,18 @@ defmodule VzBeam.Commands.Run do
     {opts, positional, invalid} =
       OptionParser.parse(args, strict: [gui: :boolean, headless: :boolean, resolution: :string, share: :string])
 
-    if invalid != [] do
-      {:error, 2, "run: unknown option\n"}
-    else
-      case positional do
-        [name] -> start(name, opts, deps)
-        _ -> {:error, 2, "usage: vzbeam run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]\n"}
-      end
+    cond do
+      invalid != [] ->
+        {:error, 2, "run: unknown option\n"}
+
+      opts[:gui] && opts[:headless] ->
+        {:error, 2, "run: --gui and --headless are mutually exclusive\n"}
+
+      true ->
+        case positional do
+          [name] -> start(name, opts, deps)
+          _ -> {:error, 2, "usage: vzbeam run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]\n"}
+        end
     end
   end
 
