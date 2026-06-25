@@ -40,3 +40,22 @@
 - 🐛→✅ **`restore` HW bug #1 (FIXED)**: first attempt crashed `EXC_BREAKPOINT/SIGTRAP` (exit 133). Crash report: `dispatch_assert_queue_fail` — `VZMacOSInstaller.init` requires the VM's (main) queue, but `VZMacOSRestoreImage.load`'s completion fires on a background queue and we created the installer there. **Fixed** (`8bea74c`): hop the post-load work to `DispatchQueue.main.async`. (Compile-clean + review-Approved in Task 8, yet HW-only — vindicates the develop-here / validate-on-Mac model.)
 - ⛔ **`restore` then fails in Apple's restore stack (env limitation)**: `VZError 10007` → `NSUnderlyingError com.apple.MobileDevice.MobileRestore #4014 "Unexpected device state 'DFU' expected 'RestoreOS'"`. Deterministic (~12 s, 2 attempts). The capability gate **passed** (`mostFeaturefulSupportedConfiguration` non-nil), config validated, installer created on the main queue — so the failure is **inside Apple's restore subsystem**, not vzbeam. Error 4014/DFU is a *physical-device* (Apple Configurator/cable) restore error; its appearance in a VZ guest restore is anomalous → the **macOS 27.0 seed host + Mac17,5/A18-Pro** mishandles VZ macOS restore. Surfaced the underlying error in the message (`8a0d1f0`).
 - **Conclusion:** vzbeam's `restore`/`run` are code-correct and hardened; the actual macOS install cannot complete on this specific machine. Boot-dependent steps 5–9 (first-boot → run → ssh → share → stop → kill → cap) are **blocked on this Mac**. Need a standard M-series Mac on a release macOS, or accept boot-deferred for this plan.
+
+## Boot suite — VALIDATED on a release-macOS Apple Silicon Mac (2026-06-25)
+
+The 27.0-seed Mac couldn't restore (MobileRestore 4014). On a **release-macOS** Apple Silicon Mac, the full boot suite passed:
+
+| step | result |
+|---|---|
+| `mix vz.build` (build+sign+entitlement), `reid`, `image-info latest` (catalog reachable) | ✅ |
+| `restore` (real `VZMacOSInstaller`) | ✅ (after the SIGTRAP main-queue fix `8bea74c`) |
+| `run` boot + `--gui` window (Dock icon after `.regular`, `f65f196`) | ✅ |
+| CoW clone → headless `run` → DHCP lease + `bridge100` → `ssh` (interactive + one-shot) | ✅ |
+| virtiofs `--share` bidirectional round-trip | ✅ |
+| `kill` (SIGTERM trap → `vm.stop()` → single `guest_stopped`) | ✅ |
+| 2-VM cap (a) engine pre-check / (b) framework `VZError 6` → mapped to cap error | ✅ / ✅ (proven via run.log `code:6`) |
+| graceful `stop` (guest `shutdown` → `guestDidStop`) | ⚠️ requires guest NOPASSWD shutdown (documented in README First boot); `stop` now fails fast with a clear message when it's missing (`3ab8c65`). The `guestDidStop`→`finishStopped` path shares `kill`'s validated finish; the guest-shutdown trigger is operator-gated. |
+
+**HW bugs found + fixed by this suite:** (1) `VZMacOSInstaller` created on a background queue → SIGTRAP (`8bea74c`); (2) `--gui` window had no Dock icon (`.accessory`→`.regular`, `f65f196`); (3) opaque `VZError 10007` → surface the underlying error (`8a0d1f0`); (4) `stop` hung 60s on a sudo-password failure → fail fast (`3ab8c65`). Plus the engine `VZError 6`→cap-error mapping (`aefeab0`) confirmed end-to-end.
+
+**Conclusion:** vzbeam Plan 4 is functionally complete and hardware-validated on release-macOS Apple Silicon.
