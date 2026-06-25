@@ -72,7 +72,7 @@ defmodule VzBeam.Commands.Run do
     case await_started(run_log, pid, @handshake_ms) do
       {:ok, _} ->
         {:ok, ["started ", name, " (pid ", Integer.to_string(pid),
-               ") — networking; try `vzbeam ip ", name, "` or `vzbeam ssh ", name, "`\n"]}
+               ") - networking; try `vzbeam ip ", name, "` or `vzbeam ssh ", name, "`\n"]}
 
       {:error, _reason} = err ->
         cleanup(name, pid)
