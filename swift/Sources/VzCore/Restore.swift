@@ -1,7 +1,12 @@
 import Virtualization
 import Foundation
 
-public func runRestore(_ args: [String]) { RestoreSession(args).start() }
+private var liveRestore: RestoreSession?
+
+public func runRestore(_ args: [String]) {
+    liveRestore = RestoreSession(args)
+    liveRestore?.start()
+}
 
 final class RestoreSession {
     private let a: Args
