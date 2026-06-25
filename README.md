@@ -11,14 +11,18 @@ A clean-room rewrite of `sbx`, split into two pieces:
 
 ## Status
 
-**Plan 1 (Elixir engine foundation) — done.** Working today:
+**Plans 1–4 implemented** — the full CLI plus the Swift `vz` sidecar:
 
-- `vzbeam ls` — list VM bundles (status / base / OS / IP / cpu / mem)
-- `vzbeam ip <name>` — a bundle's IP, read from the DHCP leases
+- `ls` / `ip` / `images` — inspect bundles, IPs, cached restore images
+- `fetch <latest|PATH>` — download + cache a restore image
+- `new <name> --image <latest|PATH>` (restore) · `new <name> <base>` (CoW clone) · `rm`
+- `run <name> [--gui|--headless] [--share tag=/path]` · `stop` · `kill` · `ssh <name> [-- cmd]`
+- `mix vz.build` — compile + ad-hoc-sign the Swift sidecar into `$VZBEAM_HOME/bin/vz`
 
-plus the storage, manifest, pidfile, and lease-parsing layer underneath. Upcoming (see
-`docs/superpowers/plans/`): image fetch + CoW clone (`fetch` / `new` / `rm`), the run lifecycle
-(`run` / `stop` / `kill`), and the Swift `vz` sidecar.
+The engine has **103 green tests**. On bare-metal Apple Silicon (a release macOS), the boot-dependent
+paths are hardware-validated: restore, boot + `--gui`, CoW clone, headless networking + `ssh`, virtiofs
+`--share`, `kill`, and the 2-VM cap (both the engine pre-check and the framework's authoritative
+`VZError 6`). See the hardware-suite results in `docs/superpowers/results/`.
 
 ## Build, test, run
 
@@ -29,12 +33,39 @@ Requires Elixir `~> 1.17` and a compatible Erlang/OTP (e.g. `mise use erlang eli
 mix deps.get
 mix test                 # the validation suite
 mix escript.build        # builds ./vzbeam
+mix vz.build             # builds + ad-hoc-signs the Swift sidecar -> $VZBEAM_HOME/bin/vz
 ./vzbeam ls
 ./vzbeam ip <name>
 ```
 
-Storage lives under `$VZBEAM_HOME` (default `~/.local/share/vzbeam`) — relocate it (e.g. to an
-external SSD) with that one env var.
+`mix vz.build` requires the Swift toolchain (Command Line Tools) and runs per machine; it re-signs the
+sidecar with the `com.apple.security.virtualization` entitlement on every build. Storage lives under
+`$VZBEAM_HOME` (default `~/.local/share/vzbeam`) — relocate it (e.g. to an external SSD) with that one
+env var.
+
+## First boot (one-time per base)
+
+A freshly restored base is unconfigured, so the **first** `run` must be `--gui` to complete macOS
+Setup Assistant:
+
+```sh
+vzbeam run base --gui     # a window opens (it has a Dock icon). In the guest:
+                          #   - create the user `admin`
+                          #   - System Settings ▸ General ▸ Sharing ▸ enable Remote Login
+```
+
+Then install the baked SSH key, and — so `vzbeam stop` can shut the guest down gracefully — grant
+`admin` passwordless `shutdown`:
+
+```sh
+vzbeam ip base                                                  # note the IP
+ssh-copy-id -i "$VZBEAM_HOME/keys/id_ed25519.pub" admin@<ip>    # one-time key install
+# in the guest (stop runs `sudo -n shutdown -h now` over SSH):
+echo 'admin ALL=(ALL) NOPASSWD: /sbin/shutdown' | sudo tee /etc/sudoers.d/vzbeam-shutdown
+```
+
+This persists on the base and is inherited by every CoW clone — paid once. (`vzbeam kill` force-stops a
+guest and needs none of this.)
 
 ## A note on validation
 
