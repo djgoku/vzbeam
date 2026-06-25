@@ -25,6 +25,14 @@ defmodule VzBeam.LeasesTest do
     assert VzBeam.Leases.lookup_ip(@sample, "00:00:00:00:00:00") == nil
   end
 
+  test "lookup_ip matches when dhcpd_leases strips leading zeros from MAC octets" do
+    # macOS bootpd writes octets without leading zeros (0x0a -> "a", 0x00 -> "0"),
+    # while our config MAC is canonical/zero-padded. They must still match.
+    stripped = "{\n\tip_address=192.168.64.42\n\thw_address=1,5e:a:b:0:cd:ef\n}\n"
+    assert VzBeam.Leases.lookup_ip(stripped, "5e:0a:0b:00:cd:ef") == "192.168.64.42"
+    assert VzBeam.Leases.lookup_ip(stripped, "5E:0A:0B:00:CD:EF") == "192.168.64.42"
+  end
+
   test "read/0 returns \"\" when the leases file is absent" do
     # default path won't exist in CI sandbox; must not raise
     assert is_binary(VzBeam.Leases.read())

@@ -6,8 +6,17 @@ defmodule VzBeam.SidecarTest do
 
   setup do
     File.chmod!(@fake, 0o755)
+    # Isolate VZBEAM_HOME to an empty temp dir so the locate chain's
+    # $VZBEAM_HOME/bin/vz step can't pick up a real installed sidecar
+    # (e.g. one placed by `mix vz.build`) — keeps these tests hermetic.
+    home = Path.join(System.tmp_dir!(), "vzbeam-sidecar-#{System.unique_integer([:positive])}")
+    System.put_env("VZBEAM_HOME", home)
     System.put_env("VZBEAM_VZ", @fake)
-    on_exit(fn -> System.delete_env("VZBEAM_VZ") end)
+    on_exit(fn ->
+      System.delete_env("VZBEAM_VZ")
+      System.delete_env("VZBEAM_HOME")
+      File.rm_rf(home)
+    end)
     :ok
   end
 

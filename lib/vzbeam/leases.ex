@@ -22,11 +22,11 @@ defmodule VzBeam.Leases do
 
   @spec lookup_ip(String.t(), String.t()) :: String.t() | nil
   def lookup_ip(content, mac) do
-    want = String.downcase(mac)
+    want = normalize_mac(mac)
 
     content
     |> parse()
-    |> Enum.find_value(fn e -> if e.mac == want, do: e.ip end)
+    |> Enum.find_value(fn e -> if normalize_mac(e.mac) == want, do: e.ip end)
   end
 
   defp parse_block(block) do
@@ -46,4 +46,15 @@ defmodule VzBeam.Leases do
 
   defp downcase(nil), do: nil
   defp downcase(s), do: String.downcase(s)
+
+  # macOS writes /var/db/dhcpd_leases MACs with leading zeros stripped per octet
+  # (e.g. `5e:a:b:0:cd:ef`), while our config MAC is canonical (`5e:0a:0b:00:cd:ef`).
+  # Normalize both to lowercase, zero-padded octets so they compare equal.
+  defp normalize_mac(nil), do: nil
+  defp normalize_mac(mac) do
+    mac
+    |> String.downcase()
+    |> String.split(":")
+    |> Enum.map_join(":", &String.pad_leading(&1, 2, "0"))
+  end
 end
