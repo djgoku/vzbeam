@@ -29,7 +29,7 @@ defmodule VzBeam.Commands.New do
     pending = Home.bundle_dir(name) <> ".pending"
 
     with :ok <- validate_name(name),
-         {:ok, base_m} <- read_base(base),
+         {:ok, base_m} <- Manifest.read_or(base, :no_such_base),
          :ok <- refute_running(base),
          :ok <- refute_exists(name),
          :ok <- clear_pending(pending),
@@ -89,13 +89,6 @@ defmodule VzBeam.Commands.New do
       n in @reserved -> {:error, :reserved_name}
       n == "" or n in [".", ".."] or String.contains?(n, ["/", "\\"]) -> {:error, :bad_name}
       true -> :ok
-    end
-  end
-
-  defp read_base(base) do
-    case Manifest.read(base) do
-      {:ok, m} -> {:ok, m}
-      _ -> {:error, :no_such_base}
     end
   end
 

@@ -23,7 +23,7 @@ defmodule VzBeam.Commands.Run do
   end
 
   defp start(name, opts, deps) do
-    with {:ok, m} <- read_manifest(name),
+    with {:ok, m} <- Manifest.read_or(name, :no_such_bundle),
          :ok <- refute_running(name),
          {:ok, share} <- parse_share(opts[:share]),
          {:ok, _keys} <- Keys.ensure(),
@@ -166,13 +166,6 @@ defmodule VzBeam.Commands.Run do
   defp mode_flag(opts), do: if(opts[:gui], do: "--gui", else: "--headless")
   defp share_args(nil), do: []
   defp share_args(%{tag: t, path: p}), do: ["--share", t, p]
-
-  defp read_manifest(name) do
-    case Manifest.read(name) do
-      {:ok, m} -> {:ok, m}
-      _ -> {:error, :no_such_bundle}
-    end
-  end
 
   defp refute_running(name), do: if(Pidfile.running?(name), do: {:error, :already_running}, else: :ok)
   defp parse_share(nil), do: {:ok, nil}

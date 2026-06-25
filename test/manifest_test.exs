@@ -18,4 +18,11 @@ defmodule VzBeam.ManifestTest do
   test "read of a missing manifest errors" do
     assert {:error, _} = VzBeam.Manifest.read("ghost")
   end
+
+  test "read_or returns the map or the caller's error" do
+    File.write!(Path.join([System.get_env("VZBEAM_HOME"), "base", "config.json"]),
+      Jason.encode!(%{"name" => "base"}))
+    assert {:ok, %{"name" => "base"}} = VzBeam.Manifest.read_or("base", :nope)
+    assert {:error, :nope} = VzBeam.Manifest.read_or("ghost", :nope)
+  end
 end

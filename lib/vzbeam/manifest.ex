@@ -12,4 +12,12 @@ defmodule VzBeam.Manifest do
       {:ok, map}
     end
   end
+
+  @spec read_or(String.t(), term) :: {:ok, map} | {:error, term}
+  def read_or(name, error) do
+    case read(name) do
+      {:ok, m} -> {:ok, m}
+      _ -> {:error, error}
+    end
+  end
 end

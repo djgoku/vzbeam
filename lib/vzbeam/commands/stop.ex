@@ -9,7 +9,7 @@ defmodule VzBeam.Commands.Stop do
   def run(args), do: run(args, default_deps())
 
   def run([name], deps) do
-    with {:ok, m} <- read_manifest(name),
+    with {:ok, m} <- Manifest.read_or(name, :no_such_bundle),
          :ok <- ensure_running(name),
          {:ok, _} <- Keys.ensure(),
          {:ok, ip} <- SshConn.resolve_ip(m, deps.leases.()) do
@@ -22,7 +22,7 @@ defmodule VzBeam.Commands.Stop do
       else
         deadline = System.monotonic_time(:millisecond) + Map.get(deps, :reap_ms, @reap_ms)
 
-        case reap(name, deadline) do
+        case Pidfile.reap(name, deadline, @poll_ms) do
           :stopped -> File.rm(Pidfile.path(name)); {:ok, ["stopped ", name, "\n"]}
           :timeout -> {:error, 1, [name, " did not stop in time; try `vzbeam kill ", name, "`\n"]}
         end
@@ -34,25 +34,10 @@ defmodule VzBeam.Commands.Stop do
 
   def run(_, _), do: {:error, 2, "usage: vzbeam stop <name>\n"}
 
-  defp reap(name, deadline) do
-    cond do
-      not Pidfile.running?(name) -> :stopped
-      System.monotonic_time(:millisecond) >= deadline -> :timeout
-      true -> Process.sleep(@poll_ms); reap(name, deadline)
-    end
-  end
-
   # `sudo -n` fails fast (no password prompt) when the guest admin lacks NOPASSWD;
   # detect that so we surface an actionable error instead of waiting out the reap.
   defp sudo_needs_auth?(out) do
     String.contains?(out, "a password is required") or String.contains?(out, "a terminal is required")
-  end
-
-  defp read_manifest(name) do
-    case Manifest.read(name) do
-      {:ok, m} -> {:ok, m}
-      _ -> {:error, :no_such_bundle}
-    end
   end
 
   defp ensure_running(name), do: if(Pidfile.running?(name), do: :ok, else: {:error, :not_running})

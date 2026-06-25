@@ -16,7 +16,7 @@ defmodule VzBeam.Commands.Kill do
           deps.signal.("-TERM", pid)
           deadline = System.monotonic_time(:millisecond) + Map.get(deps, :reap_ms, @reap_ms)
 
-          case reap(name, deadline) do
+          case Pidfile.reap(name, deadline, @poll_ms) do
             :stopped ->
               File.rm(Pidfile.path(name)); {:ok, ["killed ", name, "\n"]}
 
@@ -33,14 +33,6 @@ defmodule VzBeam.Commands.Kill do
   end
 
   def run(_, _), do: {:error, 2, "usage: vzbeam kill <name>\n"}
-
-  defp reap(name, deadline) do
-    cond do
-      not Pidfile.running?(name) -> :stopped
-      System.monotonic_time(:millisecond) >= deadline -> :timeout
-      true -> Process.sleep(@poll_ms); reap(name, deadline)
-    end
-  end
 
   @doc false
   def default_deps do

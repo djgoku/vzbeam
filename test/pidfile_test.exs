@@ -35,4 +35,10 @@ defmodule VzBeam.PidfileTest do
     {:ok, m} = VzBeam.Pidfile.read("vm")
     assert is_integer(m["pid"])
   end
+
+  test "reap returns :stopped when gone, :timeout while it lives" do
+    assert :stopped = VzBeam.Pidfile.reap("vm", System.monotonic_time(:millisecond) + 1000, 10)
+    :ok = VzBeam.Pidfile.write("vm", System.pid())
+    assert :timeout = VzBeam.Pidfile.reap("vm", System.monotonic_time(:millisecond) - 1, 10)
+  end
 end
