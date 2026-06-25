@@ -7,12 +7,12 @@ import Foundation
 private var liveRun: RunSession?
 
 public func runRun(_ args: [String]) {
-    if setsid() == -1 { Wire.log("vz: setsid failed: \(String(cString: strerror(errno)))") }  // in-process, no fork: getpid() stays == the launch pid the engine captured (Codex #5)
+    if setsid() == -1 { Wire.log("vz: setsid failed: \(String(cString: strerror(errno)))") }  // in-process, no fork: getpid() stays == the launch pid the engine captured
     let a = Args(args, booleanFlags: ["gui", "headless"], pairFlags: ["share"])
     guard let mid = a.value("machine-id"), let hw = a.value("hardware-model"), let mac = a.value("mac"),
           let disk = a.value("disk"), let aux = a.value("aux"),
           let cpu = a.value("cpu").flatMap(Int.init), let mem = a.value("mem").flatMap(UInt64.init) else {
-        Wire.emit(["type": "error", "domain": "vz", "code": 2, "message": "run: missing required flags"]); exit(2)
+        Wire.emitError(domain: "vz", code: 2, "run: missing required flags"); exit(2)
     }
     let (w, h) = parseResolution(a.value("resolution") ?? "1920x1200")
     let share = a.pair("share").map { (tag: $0.0, path: $0.1) }
@@ -39,7 +39,7 @@ final class RunSession: NSObject, VZVirtualMachineDelegate {
     func start() {
         let cfg: VZVirtualMachineConfiguration
         do { cfg = try buildConfiguration(opts) }
-        catch { return finishError(domain: "VZErrorDomain", code: (error as NSError).code, "\(error)") }
+        catch { return finishError(error) }
 
         let vm = VZVirtualMachine(configuration: cfg)   // main queue
         vm.delegate = self; self.vm = vm
@@ -47,8 +47,7 @@ final class RunSession: NSObject, VZVirtualMachineDelegate {
         vm.start { [weak self] result in
             switch result {
             case .success: Wire.emit(["type": "started", "pid": Int(getpid())])
-            case .failure(let e):
-                self?.finishError(domain: (e as NSError).domain, code: (e as NSError).code, e.localizedDescription)
+            case .failure(let e): self?.finishError(e)
             }
         }
         if opts.gui { runGUI(vm: vm) } else { RunLoop.main.run() }
@@ -61,12 +60,7 @@ final class RunSession: NSObject, VZVirtualMachineDelegate {
             guard let self else { return }
             guard let vm = self.vm else { self.finishStopped(); return }
             vm.stop { [weak self] error in
-                if let error {
-                    self?.finishError(domain: (error as NSError).domain, code: (error as NSError).code,
-                                      error.localizedDescription)
-                } else {
-                    self?.finishStopped()
-                }
+                if let error { self?.finishError(error) } else { self?.finishStopped() }
             }
         }
         s.resume(); sig = s
@@ -75,13 +69,16 @@ final class RunSession: NSObject, VZVirtualMachineDelegate {
     // VZVirtualMachineDelegate (fires on the main queue)
     func guestDidStop(_ virtualMachine: VZVirtualMachine) { finishStopped() }
     func virtualMachine(_ vm: VZVirtualMachine, didStopWithError error: Error) {
-        finishError(domain: (error as NSError).domain, code: (error as NSError).code, error.localizedDescription)
+        finishError(error)
     }
 
-    // Single terminal-emission path (Codex BLOCKING #1) — idempotent, main-thread only.
+    // Single terminal-emission path — idempotent, main-thread only.
     private func finishStopped() { finishOnce { Wire.emit(["type": "guest_stopped"]); exit(0) } }
+    private func finishError(_ error: Error) {
+        let f = Wire.errorFields(error); finishError(domain: f.domain, code: f.code, f.message)
+    }
     private func finishError(domain: String, code: Int, _ message: String) {
-        finishOnce { Wire.emit(["type": "error", "domain": domain, "code": code, "message": message]); exit(1) }
+        finishOnce { Wire.emitError(domain: domain, code: code, message); exit(1) }
     }
     private func finishOnce(_ body: () -> Void) {
         if finished { return }; finished = true; body()

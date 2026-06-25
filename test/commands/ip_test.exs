@@ -20,7 +20,7 @@ defmodule VzBeam.Commands.IpTest do
 
   test "errors when no lease is found" do
     assert {:error, 1, msg} = VzBeam.Commands.Ip.run(["base"], fn -> "" end)
-    assert IO.iodata_to_binary(msg) =~ "no lease"
+    assert IO.iodata_to_binary(msg) =~ "no DHCP lease"
   end
 
   test "errors when the bundle is missing" do

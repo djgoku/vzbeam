@@ -12,18 +12,23 @@ defmodule VzBeam.Commands.Run do
     {opts, positional, invalid} =
       OptionParser.parse(args, strict: [gui: :boolean, headless: :boolean, resolution: :string, share: :string])
 
-    if invalid != [] do
-      {:error, 2, "run: unknown option\n"}
-    else
-      case positional do
-        [name] -> start(name, opts, deps)
-        _ -> {:error, 2, "usage: vzbeam run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]\n"}
-      end
+    cond do
+      invalid != [] ->
+        {:error, 2, "run: unknown option\n"}
+
+      opts[:gui] && opts[:headless] ->
+        {:error, 2, "run: --gui and --headless are mutually exclusive\n"}
+
+      true ->
+        case positional do
+          [name] -> start(name, opts, deps)
+          _ -> {:error, 2, "usage: vzbeam run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]\n"}
+        end
     end
   end
 
   defp start(name, opts, deps) do
-    with {:ok, m} <- read_manifest(name),
+    with {:ok, m} <- Manifest.read_or(name, :no_such_bundle),
          :ok <- refute_running(name),
          {:ok, share} <- parse_share(opts[:share]),
          {:ok, _keys} <- Keys.ensure(),
@@ -166,13 +171,6 @@ defmodule VzBeam.Commands.Run do
   defp mode_flag(opts), do: if(opts[:gui], do: "--gui", else: "--headless")
   defp share_args(nil), do: []
   defp share_args(%{tag: t, path: p}), do: ["--share", t, p]
-
-  defp read_manifest(name) do
-    case Manifest.read(name) do
-      {:ok, m} -> {:ok, m}
-      _ -> {:error, :no_such_bundle}
-    end
-  end
 
   defp refute_running(name), do: if(Pidfile.running?(name), do: {:error, :already_running}, else: :ok)
   defp parse_share(nil), do: {:ok, nil}

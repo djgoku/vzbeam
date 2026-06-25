@@ -11,8 +11,4 @@ defmodule VzBeam.DefaultsTest do
     assert VzBeam.Defaults.resolve(8, :cpu) == 8
     assert VzBeam.Defaults.resolve(nil, :cpu) == 4
   end
-
-  test "describe mentions override flags" do
-    assert VzBeam.Defaults.describe() =~ "--cpu"
-  end
 end

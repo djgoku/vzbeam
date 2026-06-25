@@ -51,6 +51,15 @@ defmodule VzBeam.Pidfile do
     end
   end
 
+  @spec reap(String.t(), integer, pos_integer) :: :stopped | :timeout
+  def reap(name, deadline, poll_ms) do
+    cond do
+      not running?(name) -> :stopped
+      System.monotonic_time(:millisecond) >= deadline -> :timeout
+      true -> Process.sleep(poll_ms); reap(name, deadline, poll_ms)
+    end
+  end
+
   defp to_pid_integer(p) when is_integer(p), do: p
   defp to_pid_integer(p) when is_binary(p), do: String.to_integer(p)
 end

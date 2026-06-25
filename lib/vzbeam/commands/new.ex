@@ -4,6 +4,7 @@ defmodule VzBeam.Commands.New do
 
   @reserved ~w(cache keys bin run.lock)
   @gb 1024 * 1024 * 1024
+  @schema_version 1
 
   def run(args), do: run(args, default_deps())
 
@@ -28,7 +29,7 @@ defmodule VzBeam.Commands.New do
     pending = Home.bundle_dir(name) <> ".pending"
 
     with :ok <- validate_name(name),
-         {:ok, base_m} <- read_base(base),
+         {:ok, base_m} <- Manifest.read_or(base, :no_such_base),
          :ok <- refute_running(base),
          :ok <- refute_exists(name),
          :ok <- clear_pending(pending),
@@ -91,13 +92,6 @@ defmodule VzBeam.Commands.New do
     end
   end
 
-  defp read_base(base) do
-    case Manifest.read(base) do
-      {:ok, m} -> {:ok, m}
-      _ -> {:error, :no_such_base}
-    end
-  end
-
   defp refute_running(base), do: if(Pidfile.running?(base), do: {:error, :base_running}, else: :ok)
   defp refute_exists(name), do: if(Home.exists?(name), do: {:error, :exists}, else: :ok)
 
@@ -109,7 +103,7 @@ defmodule VzBeam.Commands.New do
   end
 
   defp write_manifest(dir, map) do
-    AtomicFile.write(Path.join(dir, "config.json"), Jason.encode!(Map.put(map, "schemaVersion", 1), pretty: true))
+    AtomicFile.write(Path.join(dir, "config.json"), Jason.encode!(Map.put(map, "schemaVersion", @schema_version), pretty: true))
   end
 
   defp create_sparse(path, size) do

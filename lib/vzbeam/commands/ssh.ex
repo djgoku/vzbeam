@@ -6,7 +6,7 @@ defmodule VzBeam.Commands.Ssh do
   def run(args), do: run(args, default_deps())
 
   def run([name | rest], deps) do
-    with {:ok, m} <- read_manifest(name),
+    with {:ok, m} <- Manifest.read_or(name, :no_such_bundle),
          {:ok, _} <- Keys.ensure(),
          {:ok, ip} <- SshConn.resolve_ip(m, deps.leases.()) do
       base = SshConn.args(ip)
@@ -44,13 +44,6 @@ defmodule VzBeam.Commands.Ssh do
 
     receive do
       {^port, {:exit_status, s}} -> s
-    end
-  end
-
-  defp read_manifest(name) do
-    case Manifest.read(name) do
-      {:ok, m} -> {:ok, m}
-      _ -> {:error, :no_such_bundle}
     end
   end
 

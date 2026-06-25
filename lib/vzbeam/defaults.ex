@@ -9,10 +9,4 @@ defmodule VzBeam.Defaults do
   @spec resolve(any | nil, atom) :: any
   def resolve(nil, key), do: Map.fetch!(@values, key)
   def resolve(flag_value, _key), do: flag_value
-
-  @spec describe() :: String.t()
-  def describe do
-    "defaults: cpu=#{@values.cpu} mem=#{@values.mem_gb}G disk=#{@values.disk_gb}G " <>
-      "(override with --cpu/--mem-gb/--disk-gb)"
-  end
 end

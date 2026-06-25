@@ -14,3 +14,10 @@ erl_crash.dump
 
 # SDD scratch (progress ledger, briefs, reports)
 /.superpowers/
+
+# macOS
+.DS_Store
+
+# Session handoff prompts (scratch, not project content)
+/plan-*-prompt.md
+/prompt.md
