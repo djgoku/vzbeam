@@ -138,7 +138,7 @@ defmodule VzBeam.Commands.Run do
 
     case Enum.find(events, &match?({:event, "error", _}, &1)) do
       {:event, "error", m} ->
-        {:error, 1, ["run failed: VZError ", to_string(m["code"]), " ", to_string(m["message"]), "\n"]}
+        vz_error(m["code"], m["message"])
 
       _ ->
         {:error, 1, ["run failed: sidecar exited during startup; see ", run_log, "\n"]}
@@ -174,14 +174,14 @@ defmodule VzBeam.Commands.Run do
   defp parse_share(nil), do: {:ok, nil}
   defp parse_share(spec), do: Share.parse(spec)
 
-  defp started_error({:error, {:vz, _d, code, msg}}, _log),
-    do: {:error, 1, ["run failed: VZError ", to_string(code), " ", to_string(msg), "\n"]}
-
+  defp started_error({:error, {:vz, _d, code, msg}}, _log), do: vz_error(code, msg)
   defp started_error({:error, :timeout}, log),
     do: {:error, 1, ["run timed out waiting for startup; see ", log, "\n"]}
-
   defp started_error({:error, :exited_early}, log),
     do: {:error, 1, ["run failed: VM exited during startup; see ", log, "\n"]}
+
+  defp vz_error(6, _msg), do: error({:error, :at_capacity})
+  defp vz_error(code, msg), do: {:error, 1, ["run failed: VZError ", to_string(code), " ", to_string(msg), "\n"]}
 
   defp error({:error, :no_such_bundle}), do: {:error, 1, "run: no such bundle\n"}
   defp error({:error, :already_running}), do: {:error, 1, "run: already running\n"}

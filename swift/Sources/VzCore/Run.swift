@@ -7,7 +7,7 @@ import Foundation
 private var liveRun: RunSession?
 
 public func runRun(_ args: [String]) {
-    setsid()   // in-process, no fork: getpid() stays == the launch pid the engine captured (Codex #5)
+    if setsid() == -1 { Wire.log("vz: setsid failed: \(String(cString: strerror(errno)))") }  // in-process, no fork: getpid() stays == the launch pid the engine captured (Codex #5)
     let a = Args(args, booleanFlags: ["gui", "headless"], pairFlags: ["share"])
     guard let mid = a.value("machine-id"), let hw = a.value("hardware-model"), let mac = a.value("mac"),
           let disk = a.value("disk"), let aux = a.value("aux"),
@@ -57,7 +57,18 @@ final class RunSession: NSObject, VZVirtualMachineDelegate {
     private func installSignalTrap() {
         signal(SIGTERM, SIG_IGN)
         let s = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        s.setEventHandler { [weak self] in self?.vm?.stop { _ in self?.finishStopped() } ?? self!.finishStopped() }
+        s.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let vm = self.vm else { self.finishStopped(); return }
+            vm.stop { [weak self] error in
+                if let error {
+                    self?.finishError(domain: (error as NSError).domain, code: (error as NSError).code,
+                                      error.localizedDescription)
+                } else {
+                    self?.finishStopped()
+                }
+            }
+        }
         s.resume(); sig = s
     }
 

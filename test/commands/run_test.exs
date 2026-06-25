@@ -49,7 +49,15 @@ defmodule VzBeam.Commands.RunTest do
       ~s({"type":"error","domain":"VZErrorDomain","code":6,"message":"max VMs"}\n))
 
     assert {:error, 1, msg} = Run.run(["dev"], deps(fn _argv, _log -> {:ok, 999_999} end))
-    assert IO.iodata_to_binary(msg) =~ "VZError 6"
+    assert IO.iodata_to_binary(msg) =~ "capacity"
+    refute File.exists?(VzBeam.Pidfile.path("dev"))
+  end
+
+  test "a non-cap VZError surfaces as a generic run-failed message" do
+    File.write!(Path.join([System.get_env("VZBEAM_HOME"), "dev", "run.log"]),
+      ~s({"type":"error","domain":"VZErrorDomain","code":7,"message":"boom"}\n))
+    assert {:error, 1, msg} = Run.run(["dev"], deps(fn _argv, _log -> {:ok, 999_999} end))
+    assert IO.iodata_to_binary(msg) =~ "VZError 7"
     refute File.exists?(VzBeam.Pidfile.path("dev"))
   end
 
