@@ -1,5 +1,3 @@
-import Foundation
-
 /// Tiny flag parser. `--k v` value flags by default; `booleanFlags` take no value;
 /// `pairFlags` consume the next TWO args (e.g. `--share <tag> <path>`).
 public struct Args {
