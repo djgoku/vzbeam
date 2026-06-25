@@ -17,6 +17,7 @@ defmodule VzBeam.Commands.RunTest do
     File.mkdir_p!(dir)
     File.write!(Path.join(dir, "config.json"),
       Jason.encode!(%{"name" => name, "macAddress" => "5e:aa:bb:cc:dd:ee",
+                      "machineIdentifier" => "MID", "hardwareModel" => "HW",
                       "cpuCount" => 2, "memoryBytes" => 2_147_483_648}))
   end
 
@@ -81,5 +82,35 @@ defmodule VzBeam.Commands.RunTest do
 
     File.write!(log, "")  # no started, BEAM alive -> times out
     assert {:error, :timeout} = Run.await_started(log, me, 30)
+  end
+
+  test "argv carries identity + explicit disk/aux and drops --bundle" do
+    {out, 0} = System.cmd("sh", ["-c", "sleep 30 >/dev/null 2>&1 & echo $!"])
+    pid = out |> String.trim() |> String.to_integer()
+    on_exit(fn -> System.cmd("kill", ["-TERM", Integer.to_string(pid)], stderr_to_stdout: true) end)
+    File.write!(Path.join([System.get_env("VZBEAM_HOME"), "dev", "run.log"]),
+      ~s({"type":"started","pid":#{pid}}\n))
+
+    parent = self()
+    spawn = fn argv, _log -> send(parent, {:argv, argv}); {:ok, pid} end
+    assert {:ok, _} = Run.run(["dev"], deps(spawn))
+
+    assert_received {:argv, argv}
+    home = System.get_env("VZBEAM_HOME")
+    refute "--bundle" in argv
+    assert arg_after(argv, "--machine-id") == "MID"
+    assert arg_after(argv, "--hardware-model") == "HW"
+    assert arg_after(argv, "--disk") == Path.join([home, "dev", "disk.img"])
+    assert arg_after(argv, "--aux") == Path.join([home, "dev", "aux.img"])
+    assert arg_after(argv, "--mac") == "5e:aa:bb:cc:dd:ee"
+    assert "--headless" in argv
+    assert arg_after(argv, "--resolution") == "1920x1200"
+  end
+
+  defp arg_after(argv, flag) do
+    case Enum.find_index(argv, &(&1 == flag)) do
+      nil -> nil
+      i -> Enum.at(argv, i + 1)
+    end
   end
 end

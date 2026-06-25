@@ -151,7 +151,10 @@ defmodule VzBeam.Commands.Run do
   end
 
   defp build_argv(vz, name, m, opts, share) do
-    [vz, "run", "--bundle", Home.bundle_dir(name), "--mac", m["macAddress"],
+    bundle = Home.bundle_dir(name)
+    [vz, "run",
+     "--machine-id", m["machineIdentifier"], "--hardware-model", m["hardwareModel"], "--mac", m["macAddress"],
+     "--disk", Path.join(bundle, "disk.img"), "--aux", Path.join(bundle, "aux.img"),
      "--cpu", to_string(m["cpuCount"]), "--mem", to_string(m["memoryBytes"]),
      mode_flag(opts), "--resolution", Defaults.resolve(opts[:resolution], :resolution)] ++ share_args(share)
   end
