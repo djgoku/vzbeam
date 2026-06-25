@@ -28,6 +28,11 @@ defmodule VzBeam.Commands.RunTest do
     assert {:error, 2, _} = Run.run([], deps(fn _, _ -> {:ok, 1} end))
   end
 
+  test "rejects an unknown option" do
+    assert {:error, 2, msg} = Run.run(["dev", "--bogus"], deps(fn _, _ -> {:ok, 999_999} end))
+    assert IO.iodata_to_binary(msg) =~ "unknown option"
+  end
+
   test "refuses a missing bundle" do
     assert {:error, 1, msg} = Run.run(["ghost"], deps(fn _, _ -> {:ok, 1} end))
     assert IO.iodata_to_binary(msg) =~ "no such bundle"

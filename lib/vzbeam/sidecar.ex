@@ -29,28 +29,32 @@ defmodule VzBeam.Sidecar do
 
   @spec call(String.t(), [String.t()], fun) :: {:ok, [Protocol.event()]} | {:error, term}
   def call(subcommand, args, runner \\ &System.cmd/3) do
-    with {:ok, path} <- locate() do
-      {out, status} = runner.(path, [subcommand | args], [])
-      lines = String.split(out, "\n", trim: true)
-      final_newline? = out == "" or String.ends_with?(out, "\n")
+    with {:ok, path} <- locate(), do: call_at(path, subcommand, args, runner)
+  end
 
-      result = Protocol.collect(lines, Map.get(@terminals, subcommand, []), final_newline?)
+  # Invoke an already-located sidecar — skips a second locate/0 when the caller
+  # already holds the path (e.g. `run` locates once, then version-checks it).
+  defp call_at(path, subcommand, args, runner) do
+    {out, status} = runner.(path, [subcommand | args], [])
+    lines = String.split(out, "\n", trim: true)
+    final_newline? = out == "" or String.ends_with?(out, "\n")
 
-      cond do
-        match?({:error, {:vz, _, _, _}}, result) -> result
-        status != 0 -> {:error, {:exit, status}}
-        true ->
-          case result do
-            {:ok, events, _terminal} -> {:ok, events}
-            {:error, _} = err -> err
-          end
-      end
+    result = Protocol.collect(lines, Map.get(@terminals, subcommand, []), final_newline?)
+
+    cond do
+      match?({:error, {:vz, _, _, _}}, result) -> result
+      status != 0 -> {:error, {:exit, status}}
+      true ->
+        case result do
+          {:ok, events, _terminal} -> {:ok, events}
+          {:error, _} = err -> err
+        end
     end
   end
 
-  @spec check_version(fun) :: :ok | {:error, term}
-  def check_version(runner \\ &System.cmd/3) do
-    with {:ok, events} <- call("--version", [], runner),
+  @spec check_version(Path.t(), fun) :: :ok | {:error, term}
+  def check_version(path, runner \\ &System.cmd/3) do
+    with {:ok, events} <- call_at(path, "--version", [], runner),
          {:event, "version", m} <- find(events, "version") do
       if m["protocol"] == @protocol_version,
         do: :ok,
@@ -81,10 +85,10 @@ defmodule VzBeam.Sidecar do
       cmd = "#{Shell.join([path, subcommand | args])} 2>#{Shell.quote_arg(stderr)}"
       port = Port.open({:spawn_executable, "/bin/sh"}, [:binary, :exit_status, {:line, @line_max}, args: ["-c", cmd]])
 
-      {events, status} = collect_stream(port, on_event, [])
+      {events, status, corrupt?} = collect_stream(port, on_event, [], false)
       tail = stderr_tail(stderr)
       File.rm(stderr)
-      resolve(events, subcommand, status, tail)
+      resolve(events, subcommand, status, tail, corrupt?)
     end
   end
 
@@ -101,23 +105,30 @@ defmodule VzBeam.Sidecar do
     end
   end
 
-  defp collect_stream(port, on_event, acc) do
+  defp collect_stream(port, on_event, acc, corrupt?) do
     receive do
       {^port, {:data, {:eol, line}}} ->
         case Protocol.decode_line(line) do
-          {:event, _, _} = ev -> on_event.(ev); collect_stream(port, on_event, [ev | acc])
-          {:error, _} -> collect_stream(port, on_event, acc)
+          {:event, _, _} = ev -> on_event.(ev); collect_stream(port, on_event, [ev | acc], corrupt?)
+          {:error, _} -> collect_stream(port, on_event, acc, true)
         end
 
+      # A partial line — an oversize (>1 MiB) line or unterminated trailing bytes.
+      # The real vz newline-terminates every event (Wire.emit), so this is a
+      # truncated/corrupt stream, not a normal delivery.
       {^port, {:data, {:noeol, _partial}}} ->
-        collect_stream(port, on_event, acc)
+        collect_stream(port, on_event, acc, true)
 
       {^port, {:exit_status, status}} ->
-        {Enum.reverse(acc), status}
+        {Enum.reverse(acc), status, corrupt?}
     end
   end
 
-  defp resolve(events, subcommand, status, stderr_tail) do
+  # Precedence: an explicit sidecar `error` event dominates; then a non-zero exit
+  # (with its stderr tail); then stream corruption — a malformed or partial line
+  # makes even a present terminal untrustworthy, so don't report success; then the
+  # terminal; else no terminal at all.
+  defp resolve(events, subcommand, status, stderr_tail, corrupt?) do
     error = Enum.find(events, &match?({:event, "error", _}, &1))
     terminal = Enum.find(events, fn {:event, t, _} -> t in Map.get(@terminals, subcommand, []) end)
 
@@ -128,6 +139,9 @@ defmodule VzBeam.Sidecar do
 
       status != 0 ->
         {:error, {:exit, status, stderr_tail}}
+
+      corrupt? ->
+        {:error, {:protocol, :corrupt_stream}}
 
       terminal ->
         {:ok, events}

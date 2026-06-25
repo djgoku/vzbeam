@@ -9,12 +9,16 @@ defmodule VzBeam.Commands.Run do
   def run(args), do: run(args, default_deps())
 
   def run(args, deps) do
-    {opts, positional, _} =
+    {opts, positional, invalid} =
       OptionParser.parse(args, strict: [gui: :boolean, headless: :boolean, resolution: :string, share: :string])
 
-    case positional do
-      [name] -> start(name, opts, deps)
-      _ -> {:error, 2, "usage: vzbeam run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]\n"}
+    if invalid != [] do
+      {:error, 2, "run: unknown option\n"}
+    else
+      case positional do
+        [name] -> start(name, opts, deps)
+        _ -> {:error, 2, "usage: vzbeam run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]\n"}
+      end
     end
   end
 
@@ -24,7 +28,7 @@ defmodule VzBeam.Commands.Run do
          {:ok, share} <- parse_share(opts[:share]),
          {:ok, _keys} <- Keys.ensure(),
          {:ok, vz} <- Sidecar.locate(),
-         :ok <- Sidecar.check_version() do
+         :ok <- Sidecar.check_version(vz) do
       run_log = Path.join(Home.bundle_dir(name), "run.log")
       argv = build_argv(vz, name, m, opts, share)
 
