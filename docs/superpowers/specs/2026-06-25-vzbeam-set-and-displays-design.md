@@ -24,13 +24,17 @@
 Edit a stopped VM's CPU count and/or memory in place, using the same friendly units as `new`.
 
 **Behavior**
-- Parse `strict: [cpu: :integer, mem_gb: :integer]`; reject unknown flags (exit 2, like `new`/`run`).
-- Require the `<name>` positional and **at least one** of `--cpu` / `--mem-gb` (else usage, exit 2).
+- Parse `strict: [cpu: :integer, mem_gb: :integer]`; reject `invalid != []` (exit 2) — this covers both
+  unknown flags **and** bad-typed values (`--cpu nope` lands in `invalid`), matching `new`/`run`.
+- Exact arity: the single `<name>` positional (extra positionals like `set dev extra` → usage, exit 2) and
+  **at least one** of `--cpu` / `--mem-gb` (else usage, exit 2).
 - `Manifest.read_or(name, :no_such_bundle)`; refuse a **running** VM (`Pidfile.running?`) → exit 1,
   "`set: <name> is running; stop it first`" (resource changes apply on next boot).
 - Validate given values: `cpu >= 1`, `mem_gb >= 1` → else exit 2.
 - Update only the given keys: `cpuCount` and/or `memoryBytes = mem_gb * 1 GiB`; preserve all other keys.
-- Atomic-write `config.json`; print `set <name>: cpu=<n> mem=<m>G` showing the effective values.
+- Atomic-write `config.json`; on write failure → exit 1, `set failed: <reason>` (the verbs' catch-all error
+  pattern). On success print `set <name>: cpu=<n> mem=<m>G` showing **both effective values** (a
+  `--cpu`-only call still prints the current memory, and vice-versa).
 
 **Manifest writer (shared, small refactor):** extract `Manifest.write_to(path, map)` — atomic +
 schema-stamped (`@schema_version`) — and have **both** `new` (writes the `.pending` path) and `set` (writes
@@ -54,8 +58,10 @@ scaled "looks like" points + scale factor when present, for display only). The e
 captured by the Mac spike (plan task 1) and frozen into a test fixture; the parser is written against that
 fixture. Marking the main display is best-effort.
 
-**Suggestions:** from the main (or first) display's native `W×H`, offer a short deduped list — `W×H`
-(match host, crispest), `(W/2)×(H/2)` (smaller window), and the vzbeam default `1920×1200`. Example:
+**Suggestions:** pick the display flagged *main*; if none is flagged, the first (the parser preserves
+`system_profiler`'s input order deterministically). From its native `W×H`, offer a short deduped list —
+`W×H` (match host, crispest), `(W div 2)×(H div 2)` (integer floor; smaller window), and the vzbeam default
+`1920×1200`. Example:
 
 ```
 $ vzbeam displays
@@ -86,10 +92,13 @@ this is an informational helper, not a failure.
 
 ## Testing summary
 
-- **A (here):** set cpu-only / mem-only / both; mem-gb → correct byte count; preserves other manifest keys;
-  refuses running; refuses missing bundle; usage error on no-flags / bad flag.
-- **B (here):** parse a captured fixture → expected displays + suggestions; empty/garbage input → graceful
-  fallback message. **(Mac):** capture the fixture; confirm the live call + parse.
+- **A (here):** cpu-only / mem-only / both (each asserts *both* effective values are printed); mem-gb →
+  correct byte count; preserves other manifest keys; refuses running; refuses missing bundle; usage (exit 2)
+  on no-flags, bad-typed flag (`--cpu nope`), unknown flag, and extra positional; write failure → exit 1.
+- **B (here):** parse the captured fixture → expected displays + suggestions; missing-name and
+  missing-resolution fields → graceful skip; empty / garbage / no-display input → the fallback line.
+  **(Mac):** capture the fixture; confirm the live call + parse.
+- **CLI:** `cli_test` asserts `set` and `displays` dispatch and appear in help.
 
 ## Build order
 
