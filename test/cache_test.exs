@@ -102,4 +102,15 @@ defmodule VzBeam.CacheTest do
     assert {:error, :boom} = Cache.ensure("https://host.example/x.ipsw", deps)
     assert Path.wildcard(Path.join(Cache.dir(), "url-fetch-*.ipsw")) == []
   end
+
+  test "ensure rejects an https URL carrying userinfo" do
+    assert {:error, :url_userinfo_not_allowed} =
+             Cache.ensure("https://user:pass@host.example/x.ipsw", url_deps())
+  end
+
+  test "ensure strips the fragment when storing a URL entry" do
+    assert {:ok, :fetched, e} = Cache.ensure("https://host.example/x.ipsw#part1", url_deps())
+    assert e["url"] == "https://host.example/x.ipsw"
+    refute e["url"] =~ "#"
+  end
 end

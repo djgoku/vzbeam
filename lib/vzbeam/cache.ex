@@ -71,7 +71,12 @@ defmodule VzBeam.Cache do
 
   defp normalize_url(spec) do
     uri = URI.parse(spec)
-    if uri.host in [nil, ""], do: {:error, :bad_url}, else: {:ok, URI.to_string(uri)}
+
+    cond do
+      uri.host in [nil, ""] -> {:error, :bad_url}
+      uri.userinfo not in [nil, ""] -> {:error, :url_userinfo_not_allowed}
+      true -> {:ok, URI.to_string(%{uri | fragment: nil})}
+    end
   end
 
   defp acquire_url(url, deps) do
