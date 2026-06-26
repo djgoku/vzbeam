@@ -14,12 +14,23 @@ A clean-room rewrite of `sbx`, split into two pieces:
 **Plans 1–4 implemented** — the full CLI plus the Swift `vz` sidecar:
 
 - `ls` / `ip` / `images` — inspect bundles, IPs, cached restore images
-- `fetch <latest|PATH>` — download + cache a restore image
-- `new <name> --image <latest|PATH>` (restore) · `new <name> <base>` (CoW clone) · `rm`
+- `fetch <spec>` — download + cache a restore image
+- `new <name> --image <spec>` (restore) · `new <name> <base>` (CoW clone) · `rm`
 - `run <name> [--gui|--headless] [--share tag=/path]` · `stop` · `kill` · `ssh <name> [-- cmd]`
 - `mix vz.build` — compile + ad-hoc-sign the Swift sidecar into `$VZBEAM_HOME/bin/vz`
 
-The engine has **103 green tests**. On bare-metal Apple Silicon (a release macOS), the boot-dependent
+An image `<spec>` (for `fetch` and `new --image`) is one of:
+
+- `latest` — Apple's latest supported restore image
+- a **local path** to an `.ipsw`
+- an **`https://` URL** to an `.ipsw` — downloaded (with a progress bar) and cached; re-fetching the
+  same URL is a no-op
+- a cached **build id** from `vzbeam images` (e.g. `26A5368g`, case-insensitive) — reused straight
+  from the cache, no download
+
+All four resolve to a cached image keyed by its build, so the disk is never duplicated.
+
+The engine has **147 green tests**. On bare-metal Apple Silicon (a release macOS), the boot-dependent
 paths are hardware-validated: restore, boot + `--gui`, CoW clone, headless networking + `ssh`, virtiofs
 `--share`, `kill`, and the 2-VM cap (both the engine pre-check and the framework's authoritative
 `VZError 6`). See the hardware-suite results in `docs/superpowers/results/`.
