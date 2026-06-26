@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-25-vzbeam-burrito-packaging-design.md`
 
+**Reviews folded in:** Codex design-review (spec) + Codex plan-review (this plan).
+
 ## Global Constraints
 
 _Every task implicitly includes these (verbatim from the spec):_
@@ -21,7 +23,7 @@ _Every task implicitly includes these (verbatim from the spec):_
 - **Deliverable build command: `MIX_ENV=prod mix release`.** (`MIX_ENV != prod` always re-extracts — handy in the spike loop, not the shipped mode.)
 - **`mix test` and `mix escript.build` stay green throughout.** No `Mix.*` on the engine's runtime path; no release runtime hooks (`env.sh`/`vm.args`/cookie/node).
 - **This box CANNOT boot VZ guests** (no nested macOS virtualization). VM-boot validation is HW-gated to the real Mac (`dj_goku@10.5.0.48`); everything else is provable here.
-- **Force a clean install between packaging iterations** (`./burrito_out/vzbeam maintenance uninstall`, or bump version) — Burrito reuses a content-addressed install keyed by name/version/ERTS and will otherwise run a stale extracted sidecar.
+- **Force a clean install between packaging iterations** with `rm -rf "$(./burrito_out/vzbeam maintenance directory)"` (`maintenance uninstall` prompts interactively — don't script it), or bump the version — Burrito reuses a content-addressed install keyed by name/version/ERTS and will otherwise run a stale extracted sidecar.
 
 ---
 
@@ -417,59 +419,110 @@ git commit -m "feat(sidecar): guarded bundled priv/vz candidate + VZBEAM_DEBUG p
 
 ---
 
-### Task 4: Sidecar staging via Burrito patch phase + integration validation
+### Task 4: Sidecar staging via a Burrito patch-phase Step module + integration validation
 
-Builds + signs `vz` and drops it into the release payload via Burrito's **patch phase** (`work_dir` is the directory Burrito archives), then proves on this box that the bundled sidecar extracts intact (short of actually booting a VM).
+Builds + signs `vz` and drops it into the release payload via a Burrito **patch-phase Step module** — `extra_steps` entries are **module atoms** implementing `Burrito.Builder.Step.execute/1` (verified against the behaviour docs), not function captures. `work_dir` is the directory Burrito archives. Then proves on this box that the bundled sidecar extracts intact (short of actually booting a VM).
 
 **Files:**
-- Create: `lib/vzbeam/release.ex`
-- Modify: `mix.exs` (`releases/0` → add `extra_steps`)
+- Create: `lib/vzbeam/release/stage_sidecar.ex`
+- Test: `test/release_stage_sidecar_test.exs`
+- Modify: `mix.exs` (`releases/0` → add `extra_steps`); possibly `lib/vzbeam/sidecar.ex` (only if Step 8 shows the exec bit is dropped)
 
 **Interfaces:**
-- Consumes: `VzBeam.Sidecar.Build.build_and_sign/2` (Task 2); the `releases/0` target (Task 1); the guarded priv candidate (Task 3).
-- Produces: `VzBeam.Release.stage_sidecar/1` (Burrito patch step: map with `:work_dir` in, same map out).
+- Consumes: `VzBeam.Sidecar.Build.build_and_sign/0` (Task 2); the `releases/0` target (Task 1); the guarded priv candidate (Task 3).
+- Produces: `VzBeam.Release.StageSidecar` implementing `Burrito.Builder.Step` (`execute/1 :: Context.t() -> Context.t()`); testable `stage(context, build_fun)`.
 
-- [ ] **Step 1: Discovery — confirm the patch-step contract**
+- [ ] **Step 1: Discovery — confirm the Step contract + the archived-dir field**
 
-Create `lib/vzbeam/release.ex` with a temporary inspecting step:
+Create `lib/vzbeam/release/stage_sidecar.ex` with a temporary inspecting step that does **not** assume a field name:
 
 ```elixir
-defmodule VzBeam.Release do
+defmodule VzBeam.Release.StageSidecar do
   @moduledoc false
-  def stage_sidecar(context) do
-    IO.inspect(Map.take(context, [:work_dir, :self_dir]), label: "burrito ctx")
-    IO.inspect(Path.wildcard(Path.join(context.work_dir, "lib/vzbeam-*")), label: "app dirs")
+  @behaviour Burrito.Builder.Step
+
+  @impl true
+  def execute(context) do
+    IO.inspect(Map.keys(context), label: "burrito ctx keys")
+    if dir = Map.get(context, :work_dir),
+      do: IO.inspect(Path.wildcard(Path.join(dir, "lib/vzbeam-*")), label: "app dirs")
     context
   end
 end
 ```
 
-Wire it in `mix.exs` `releases/0`:
+Wire it in `mix.exs` `releases/0` (a **module atom** in `extra_steps`):
 
 ```elixir
       burrito: [
         targets: [macos_silicon: [os: :darwin, cpu: :aarch64]],
-        extra_steps: [patch: [post: [&VzBeam.Release.stage_sidecar/1]]]
+        extra_steps: [patch: [post: [VzBeam.Release.StageSidecar]]]
       ]
 ```
 
 Run: `MIX_ENV=prod mix release`
-Expected: logs a `burrito ctx` map with a real `:work_dir`, and `app dirs` listing exactly one `.../lib/vzbeam-0.1.0` path. (Confirms the field name + that the patch step receives/returns the context.)
+Expected: logs `burrito ctx keys` including `:work_dir` and `:mix_release`, and `app dirs` listing exactly one `.../lib/vzbeam-0.1.0` path. (Confirms the Step module is invoked with the context and that `work_dir` is the archived dir.)
 
-- [ ] **Step 2: Implement real staging**
+- [ ] **Step 2: Write the failing staging test (TDD)**
 
-Replace `lib/vzbeam/release.ex`:
+Create `test/release_stage_sidecar_test.exs`:
 
 ```elixir
-defmodule VzBeam.Release do
+defmodule VzBeam.Release.StageSidecarTest do
+  use ExUnit.Case, async: true
+  import Bitwise
+  alias VzBeam.Release.StageSidecar
+
+  setup do
+    work = Path.join(System.tmp_dir!(), "stage-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(Path.join(work, "lib/vzbeam-0.1.0"))
+    product = Path.join(work, "built-vz")
+    File.write!(product, "FAKE-VZ-BYTES")
+    on_exit(fn -> File.rm_rf(work) end)
+    %{work: work, product: product}
+  end
+
+  test "stage/2 copies the built product into the payload priv/ as an executable",
+       %{work: work, product: product} do
+    ctx = %{work_dir: work}
+    assert ^ctx = StageSidecar.stage(ctx, fn -> {:ok, product} end)
+    dest = Path.join(work, "lib/vzbeam-0.1.0/priv/vz")
+    assert File.read!(dest) == "FAKE-VZ-BYTES"
+    assert (File.stat!(dest).mode &&& 0o111) != 0
+  end
+
+  test "stage/2 raises when the build helper fails", %{work: work} do
+    assert_raise RuntimeError, ~r/vz sidecar staging failed/, fn ->
+      StageSidecar.stage(%{work_dir: work}, fn -> {:error, "boom"} end)
+    end
+  end
+end
+```
+
+- [ ] **Step 3: Run it to verify it fails**
+
+Run: `mix test test/release_stage_sidecar_test.exs`
+Expected: FAIL — `StageSidecar.stage/2` is not defined.
+
+- [ ] **Step 4: Implement the Step module**
+
+Replace `lib/vzbeam/release/stage_sidecar.ex`:
+
+```elixir
+defmodule VzBeam.Release.StageSidecar do
   @moduledoc false
+  @behaviour Burrito.Builder.Step
 
   # Burrito patch-phase step: build + ad-hoc-sign the Swift `vz` and drop it into
   # the release payload's priv/ so :code.priv_dir(:vzbeam) resolves it at runtime.
-  # work_dir is the directory Burrito archives. Receives + returns the context.
-  def stage_sidecar(%{work_dir: work_dir} = context) do
+  # work_dir is the directory Burrito archives.
+  @impl true
+  def execute(context), do: stage(context, &VzBeam.Sidecar.Build.build_and_sign/0)
+
+  @doc false
+  def stage(%{work_dir: work_dir} = context, build_fun) do
     product =
-      case VzBeam.Sidecar.Build.build_and_sign() do
+      case build_fun.() do
         {:ok, p} -> p
         {:error, m} -> raise "vz sidecar staging failed: #{m}"
       end
@@ -488,43 +541,57 @@ defmodule VzBeam.Release do
 end
 ```
 
-- [ ] **Step 3: Build the single-file binary with a clean install**
+- [ ] **Step 5: Run the test — passes**
+
+Run: `mix test test/release_stage_sidecar_test.exs`
+Expected: PASS (both cases).
+
+- [ ] **Step 6: Build the single-file binary**
 
 Run:
 ```bash
 rm -rf burrito_out
 MIX_ENV=prod mix release
 ```
-Expected: the `burrito: staged signed vz -> .../lib/vzbeam-0.1.0/priv/vz (sha256=<HASH>)` line appears; `./burrito_out/vzbeam` is produced. **Record `<HASH>`** for Step 5.
+Expected: the `burrito: staged signed vz -> .../lib/vzbeam-0.1.0/priv/vz (sha256=<HASH>)` line appears; `./burrito_out/vzbeam` is produced. **Record `<HASH>`** for Step 8.
 
-- [ ] **Step 4: Force a clean extraction, then confirm the bundled sidecar is selected**
+- [ ] **Step 7: Force a clean extraction noninteractively, with a hermetic home**
 
-Run:
 ```bash
-./burrito_out/vzbeam maintenance uninstall   # clear any prior content-addressed install
-unset VZBEAM_VZ; unset VZBEAM_HOME           # don't let a dev sidecar shadow the bundle
-VZBEAM_DEBUG=1 ./burrito_out/vzbeam ls 2>&1 | grep "using sidecar"
+export VZBEAM_HOME=$(mktemp -d)   # empty home -> no $VZBEAM_HOME/bin/vz to shadow the bundle
+unset VZBEAM_VZ                   # no explicit override
+rm -rf "$(./burrito_out/vzbeam maintenance directory)"   # noninteractive clean — `maintenance uninstall` PROMPTS
+./burrito_out/vzbeam ls           # triggers a fresh extraction
 ```
-Expected: extraction happens; the debug line shows `using sidecar <install>/lib/vzbeam-0.1.0/priv/vz` — the **bundled** path, not a `$VZBEAM_HOME/bin/vz`.
+Expected: `ls` runs; the install dir is freshly unpacked. (`maintenance directory` only prints the path. With `VZBEAM_VZ` unset, an empty `VZBEAM_HOME`, and no `vz` on `$PATH`, the bundled `priv/vz` is the only candidate `locate/0` can resolve — so selection is established by construction here; the live `locate/0` + `VZBEAM_DEBUG` line is exercised for real on hardware in Task 6.)
 
-- [ ] **Step 5: Prove the extracted sidecar is intact — runs, byte-identical, entitled**
+- [ ] **Step 8: Prove the extracted sidecar is intact — executable, runs, byte-identical, entitled**
 
-Run:
 ```bash
 DIR=$(./burrito_out/vzbeam maintenance directory)
 VZ="$DIR"/lib/vzbeam-0.1.0/priv/vz
+test -x "$VZ" && echo "exec bit OK" || echo "EXEC BIT DROPPED"
 "$VZ" --version                               # protocol handshake; no entitlement needed to run
-shasum -a 256 "$VZ"                           # compare to <HASH> from Step 3 — must match
+shasum -a 256 "$VZ"                           # compare to <HASH> from Step 6 — must match
 codesign -d --entitlements - "$VZ" 2>&1 | grep -A1 virtualization
-test -x "$VZ" && echo "exec bit OK"
 ```
-Expected: `--version` prints the version/protocol JSON; the sha256 **equals** Step 3's `<HASH>` (extraction preserved bytes); `codesign` shows `com.apple.security.virtualization`; the exec bit is set. (If the exec bit is missing, the defensive `chmod` in `locate/0`/staging covers it — note it for Step 6 of Task 5.)
+Expected: exec bit set; `--version` prints version/protocol JSON; sha256 **equals** Step 6's `<HASH>` (extraction preserved bytes); `codesign` shows `com.apple.security.virtualization`.
 
-- [ ] **Step 6: Commit**
+**If `EXEC BIT DROPPED`:** make `priv_vz/1` best-effort chmod the bundled binary when present, then rebuild + re-check. Replace the `priv_vz(dir)` clause in `lib/vzbeam/sidecar.ex`:
+```elixir
+  def priv_vz(dir) do
+    path = Path.join(to_string(dir), "vz")
+    if File.regular?(path), do: File.chmod(path, 0o755)
+    path
+  end
+```
+(Only apply if the bit is actually dropped — otherwise the staging `chmod` + archive preservation suffices; YAGNI.)
+
+- [ ] **Step 9: Commit**
 
 ```bash
-git add lib/vzbeam/release.ex mix.exs
-git commit -m "feat(burrito): stage ad-hoc-signed vz into the payload via the patch phase"
+git add lib/vzbeam/release/stage_sidecar.ex test/release_stage_sidecar_test.exs mix.exs lib/vzbeam/sidecar.ex
+git commit -m "feat(burrito): stage ad-hoc-signed vz into the payload via a patch-phase Step module"
 ```
 
 ---
@@ -537,7 +604,7 @@ Resolves the wrapper-signing/quarantine questions with evidence, then writes the
 - Modify: `.gitignore` (add `/burrito_out/`)
 - Modify: `README.md` (packaging section)
 - Modify: `docs/superpowers/specs/2026-06-21-vzbeam-design.md` (§11 note)
-- Possibly modify: `mix.exs` / `lib/vzbeam/release.ex` (post-`wrap` ad-hoc sign — only if Step 1/2 require it)
+- Possibly create: `lib/vzbeam/release/sign_wrapper.ex` (a `build:[post:]` Step) — only if Step 3 needs pipelined wrapper signing; otherwise a documented manual `codesign`
 
 **Interfaces:**
 - Consumes: the wrapped binary from Task 4.
@@ -555,19 +622,27 @@ Expected: the wrapper runs (it already did in Task 1). Note whether Zig left an 
 
 Run:
 ```bash
-xattr -p com.apple.quarantine ./burrito_out/vzbeam 2>&1 || echo "no quarantine (expected for local/scp)"
+xattr -p com.apple.quarantine ./burrito_out/vzbeam 2>&1 || echo "no quarantine (expected for a local build)"
 # Simulate a quarantined download and check whether the EXTRACTED sidecar inherits it:
 cp ./burrito_out/vzbeam /tmp/vzbeam-q && xattr -w com.apple.quarantine "0081;0;test;" /tmp/vzbeam-q
-/tmp/vzbeam-q maintenance uninstall; /tmp/vzbeam-q ls >/dev/null 2>&1 || true
-DIR=$(/tmp/vzbeam-q maintenance directory)
-xattr -p com.apple.quarantine "$DIR"/lib/vzbeam-0.1.0/priv/vz 2>&1 || echo "extracted vz: no quarantine"
+export VZBEAM_HOME=$(mktemp -d)
+rm -rf "$(/tmp/vzbeam-q maintenance directory)"   # noninteractive clean (NOT `maintenance uninstall`)
+/tmp/vzbeam-q ls >/dev/null 2>&1 || true
+QDIR=$(/tmp/vzbeam-q maintenance directory)
+xattr -p com.apple.quarantine "$QDIR"/lib/vzbeam-0.1.0/priv/vz 2>&1 || echo "extracted vz: no quarantine"
 ```
-Expected (record actual): locally-built binary has **no** quarantine. Document whether a quarantined wrapper propagates quarantine to the extracted `vz`.
+Expected (record actual): a locally-built binary has **no** quarantine. Document whether a quarantined wrapper propagates quarantine to the extracted `vz`.
 
-- [ ] **Step 3: Decide + implement only if needed**
+- [ ] **Step 3: Decide + implement only if the evidence demands it**
 
-- If Step 1 shows the wrapper is unsigned or won't run on a clean machine → add a post-`wrap` step that ad-hoc-signs the wrapper (`codesign --force --sign - <binary>`) and re-verify it runs. Otherwise, **no code change**.
-- If Step 2 shows the extracted `vz` inherits quarantine → the README `xattr -dr` instruction (Step 4) is the fix; do **not** add programmatic xattr-stripping unless boot validation (Task 6) proves it necessary (YAGNI).
+- **Wrapper signature:** if Step 1 shows `UNSIGNED` or the binary won't run, ad-hoc-sign the produced wrapper and re-verify:
+  ```bash
+  codesign --force --sign - ./burrito_out/vzbeam
+  codesign -dv ./burrito_out/vzbeam 2>&1 | grep -i signature
+  ./burrito_out/vzbeam --help >/dev/null && echo "runs after signing"
+  ```
+  If `codesign` refuses because of the appended payload (`file too large` / `data after end of file`), post-`wrap` re-signing isn't viable — record that and rely on the no-quarantine scp channel (the binary already ran in Task 1, so its link-time signature suffices locally). Promote to a pipelined `build:[post:]` Step only if HW (Task 6) proves Gatekeeper blocks it.
+- **Quarantine:** if Step 2 shows the extracted `vz` inherits quarantine → the README `xattr -dr` instruction (Step 4) is the documented fix; do **not** add programmatic xattr-stripping unless Task 6 proves it necessary (YAGNI).
 
 Record the decision in one line in the commit message.
 
@@ -588,8 +663,14 @@ MIX_ENV=prod mix release         # -> ./burrito_out/vzbeam  (carries the signed 
 scp ./burrito_out/vzbeam user@mac:/usr/local/bin/vzbeam
 ```
 
-Copying via `scp`/`rsync`/`tar` adds no quarantine, so the ad-hoc-signed binary runs as-is.
-If you download it via a browser/AirDrop, clear quarantine once before first run:
+`scp`/`rsync`/`tar`/`git` **normally** add no `com.apple.quarantine` xattr, so the ad-hoc-signed
+binary runs as-is. Verify on the target before first run:
+
+```sh
+xattr -p com.apple.quarantine ./vzbeam    # no output = not quarantined, good
+```
+
+If it IS quarantined (browser/AirDrop download), clear it once:
 
 ```sh
 xattr -dr com.apple.quarantine ./vzbeam
@@ -622,7 +703,7 @@ Run: `mix test`
 Expected: green (no engine changes, or wrapper-signing step only).
 
 ```bash
-git add .gitignore README.md docs/superpowers/specs/2026-06-21-vzbeam-design.md mix.exs lib/vzbeam/release.ex
+git add .gitignore README.md docs/superpowers/specs/2026-06-21-vzbeam-design.md
 git commit -m "docs(burrito): packaging README + quarantine/signing decision; ignore burrito_out"
 ```
 
@@ -645,14 +726,15 @@ Expected: no quarantine over scp; the binary is present.
 
 - [ ] **Step 2: Boot a guest from the bundled sidecar**
 
-On the Mac (against an existing provisioned base):
+On the Mac, list the provisioned bases and pick one (no `<base>` placeholder):
 ```bash
-VZBEAM_DEBUG=1 ~/vzbeam ls                 # confirms it selects the bundled priv/vz
-~/vzbeam run <base> --headless
-~/vzbeam ip <base> && ~/vzbeam ssh <base> -- true
-~/vzbeam kill <base>
+~/vzbeam ls                                # pick a provisioned, stopped base from the output
+BASE=<name from the ls output>
+VZBEAM_DEBUG=1 ~/vzbeam run "$BASE" --headless   # the `using sidecar <bundled path>` line confirms locate/0 picked the bundle
+~/vzbeam ip "$BASE" && ~/vzbeam ssh "$BASE" -- true
+~/vzbeam kill "$BASE"
 ```
-Expected: `run` boots (no entitlement/signature error from the extracted `vz`), SSH succeeds, `kill` stops it. A `--gui` smoke test is optional.
+Expected: the `VZBEAM_DEBUG` line names the extracted `priv/vz`; `run` boots (no entitlement/signature error from the extracted `vz`); SSH succeeds; `kill` stops it. A `--gui` smoke test is optional. (`ls` itself doesn't call the sidecar, so `VZBEAM_DEBUG` rides on `run`, which does.)
 
 - [ ] **Step 3: Record results + commit**
 
@@ -669,6 +751,8 @@ git commit -m "test(burrito): HW validation — VM boots from the bundled sideca
 
 **Spec coverage:** §1 support matrix → Global Constraints + Task 6; §2 scope → Tasks 1–5; §3 shape/reuse → Tasks 4 (staging) + clean-install constraint; §4 mix.exs → Tasks 1 (deps/escript/app/releases) + 4 (extra_steps); §5 entrypoint → Task 1; §6 staging → Tasks 2 (helper) + 4 (patch step); §7 locate/observability → Task 3; §8 signing/quarantine → Task 5; §9 validation → Tasks 1 (cold-start), 4 (extraction/byte-identity/entitlement), 5 (wrapper/quarantine), 6 (boot); §10 decisions + §11 open questions → resolved across Tasks 4–6. No gaps.
 
-**Placeholders:** none — every code/test/command step is concrete. Task 5 Step 3 is intentionally conditional (evidence-gated), with both branches specified.
+**Placeholders:** none — every code/test/command step is concrete. The two evidence-gated branches (Task 4 Step 8 runtime chmod, Task 5 Step 3 wrapper signing) include the exact code/commands for the branch that fires.
 
-**Type consistency:** `build_and_sign/2` returns `{:ok, Path.t()} | {:error, String.t()}` and is consumed identically in `Mix.Tasks.Vz.Build` and `VzBeam.Release.stage_sidecar/1`. `priv_vz/1` returns `nil | Path.t()`, consumed by `locate/0`'s `usable?/1` (already nil-safe). `cli_mode?/0 :: boolean`. `stage_sidecar/1` takes/returns the context map. Consistent across tasks.
+**Type consistency:** `build_and_sign/2` returns `{:ok, Path.t()} | {:error, String.t()}`, consumed identically in `Mix.Tasks.Vz.Build` and `VzBeam.Release.StageSidecar.stage/2` (via the injected build fn). `priv_vz/1` returns `nil | Path.t()`, consumed by `locate/0`'s `usable?/1` (already nil-safe). `cli_mode?/0 :: boolean`. `StageSidecar.execute/1` takes/returns the Burrito context. Consistent across tasks.
+
+**Codex plan-review (folded):** all 10 findings addressed — patch step is a `Burrito.Builder.Step` module not a function capture (#6); `maintenance uninstall` → `rm -rf "$(… maintenance directory)"` (#7); hermetic `VZBEAM_HOME=$(mktemp -d)` (#2); staging TDD'd via `stage/2` (#4); bundled-selection validated by construction here + live `VZBEAM_DEBUG` on HW, dropping the `ls | grep` that never fires (#1); runtime chmod spike-gated, false claim removed (#3); discovery inspects `Map.keys` (#5); wrapper-signing branch made concrete (#8); README wording softened + `xattr -p` verify (#9); Task 6 picks a real `$BASE` (#10).
