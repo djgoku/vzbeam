@@ -35,6 +35,32 @@ defmodule VzBeam.CacheTest do
     assert [%{"build" => "25F80"}] = Cache.list()
   end
 
+  test "ensure resolves a cached build id straight from the cache (no sidecar)" do
+    assert {:ok, :fetched, _} = Cache.ensure("/tmp/x.ipsw", deps())
+
+    # If the build-id alias works, image_info is never called, so this stub's
+    # error never surfaces; without the alias it would fall to ensure_local.
+    no_sidecar = %{deps() | image_info: fn _ -> {:error, :should_not_call_sidecar} end}
+    assert {:ok, :cached, e} = Cache.ensure("25F80", no_sidecar)
+    assert e["build"] == "25F80" and e["file"] == "25F80.ipsw"
+  end
+
+  test "ensure treats an unknown build token as a local spec (not a cache alias)" do
+    # Nothing cached yet, so "25F80" is not a build id — it must go through the
+    # local flow (sidecar image-info), not short-circuit as cached.
+    assert {:ok, :fetched, e} = Cache.ensure("25F80", deps())
+    assert e["build"] == "25F80"
+  end
+
+  test "ensure does not alias a cached build whose file is gone" do
+    assert {:ok, :fetched, _} = Cache.ensure("/tmp/x.ipsw", deps())
+    File.rm!(Path.join(Cache.dir(), "25F80.ipsw"))
+    # Index still lists 25F80 but the file is gone: the alias must not claim it.
+    # It falls through to ensure_local, where image-info on the bare token fails.
+    no_sidecar = %{deps() | image_info: fn _ -> {:error, :file_gone} end}
+    assert {:error, :file_gone} = Cache.ensure("25F80", no_sidecar)
+  end
+
   test "ensure reconciles an orphaned final file into the index" do
     File.mkdir_p!(Cache.dir())
     File.write!(Path.join(Cache.dir(), "25F80.ipsw"), "ORPHAN")

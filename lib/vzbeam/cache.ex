@@ -34,7 +34,29 @@ defmodule VzBeam.Cache do
     case classify(spec) do
       :url -> ensure_url(spec, deps)
       :bad_scheme -> {:error, :unsupported_url_scheme}
-      :local -> ensure_local(spec, deps)
+      :local -> ensure_cached_or_local(spec, deps)
+    end
+  end
+
+  # A bare spec that exactly matches a cached build id (the BUILD column shown
+  # by `vzbeam images`) resolves straight from the cache — no sidecar, no copy —
+  # so `--image 26A5368g` works instead of re-typing the path or URL. `latest`,
+  # real paths, and unknown tokens don't match a build id and fall through.
+  # (Edge: a bare local filename equal to a cached build id takes the alias;
+  # give it an `.ipsw`/path to force the local flow — IPSWs always have one.)
+  defp ensure_cached_or_local(spec, deps) do
+    case lookup_by_build(spec) do
+      {:ok, entry} -> {:ok, :cached, entry}
+      :error -> ensure_local(spec, deps)
+    end
+  end
+
+  defp lookup_by_build(build) do
+    with {:ok, entry} <- lookup(build),
+         true <- File.regular?(Path.join(dir(), entry["file"])) do
+      {:ok, entry}
+    else
+      _ -> :error
     end
   end
 
