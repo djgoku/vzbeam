@@ -17,6 +17,7 @@ defmodule VzBeam.CLI do
     stop <name>        graceful guest shutdown over SSH
     kill <name>        force power-off (SIGTERM, then SIGKILL)
     ssh <name> [-- cmd…]  ssh into a VM (interactive or one-shot)
+    displays           show host display(s) + suggested --resolution values
   """
 
   @spec main([String.t()]) :: no_return
@@ -42,5 +43,6 @@ defmodule VzBeam.CLI do
   def run(["stop" | rest]), do: VzBeam.Commands.Stop.run(rest)
   def run(["kill" | rest]), do: VzBeam.Commands.Kill.run(rest)
   def run(["ssh" | rest]), do: VzBeam.Commands.Ssh.run(rest)
+  def run(["displays" | rest]), do: VzBeam.Commands.Displays.run(rest)
   def run([verb | _]), do: {:error, 2, ["unknown command: ", verb, "\n", @usage]}
 end

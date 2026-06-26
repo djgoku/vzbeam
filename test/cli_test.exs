@@ -20,4 +20,9 @@ defmodule VzBeam.CLITest do
     assert {:error, 2, _} = VzBeam.CLI.run(["set", "dev"])
     assert IO.iodata_to_binary(elem(VzBeam.CLI.run(["--help"]), 1)) =~ "set <name>"
   end
+
+  test "displays dispatches (arity guard) and appears in help" do
+    assert {:error, 2, _} = VzBeam.CLI.run(["displays", "extra"])  # routed to the verb, not help
+    assert IO.iodata_to_binary(elem(VzBeam.CLI.run(["--help"]), 1)) =~ "displays"
+  end
 end
