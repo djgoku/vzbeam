@@ -17,6 +17,16 @@ defmodule VzBeam.CacheTest do
     }
   end
 
+  defp url_deps(build \\ "25F80") do
+    %{
+      image_info: fn _path ->
+        {:ok, %{version: "26.5.1", build: build, url: "https://cdn.example/redirect.ipsw", source: "local"}}
+      end,
+      download: fn _url, dst -> File.write(dst, "IPSWBYTES") end,
+      copy: fn _s, _d -> {:error, :should_not_copy} end
+    }
+  end
+
   test "ensure fetches, indexes, and is idempotent" do
     assert {:ok, :fetched, e} = Cache.ensure("/tmp/x.ipsw", deps())
     assert e["build"] == "25F80" and e["file"] == "25F80.ipsw"
@@ -64,5 +74,32 @@ defmodule VzBeam.CacheTest do
 
     assert {:ok, :fetched, _e} = Cache.ensure(src, deps)
     assert File.regular?(Path.join(Cache.dir(), "25F80.ipsw"))
+  end
+
+  test "ensure fetches an https URL, overriding source/url and indexing by build" do
+    assert {:ok, :fetched, e} = Cache.ensure("https://host.example/x.ipsw", url_deps())
+    assert e["build"] == "25F80"
+    assert e["file"] == "25F80.ipsw"
+    assert e["source"] == "url"
+    assert e["url"] == "https://host.example/x.ipsw"
+    assert File.regular?(Path.join(Cache.dir(), "25F80.ipsw"))
+  end
+
+  test "ensure rejects a non-https URL scheme" do
+    assert {:error, :unsupported_url_scheme} = Cache.ensure("http://host.example/x.ipsw", url_deps())
+  end
+
+  test "ensure rejects a non-http unsupported scheme" do
+    assert {:error, :unsupported_url_scheme} = Cache.ensure("ftp://host.example/x.ipsw", url_deps())
+  end
+
+  test "ensure rejects an https URL with no host" do
+    assert {:error, :bad_url} = Cache.ensure("https://", url_deps())
+  end
+
+  test "ensure cleans up the pending file when image-info fails on a URL fetch" do
+    deps = %{url_deps() | image_info: fn _ -> {:error, :boom} end}
+    assert {:error, :boom} = Cache.ensure("https://host.example/x.ipsw", deps)
+    assert Path.wildcard(Path.join(Cache.dir(), "url-fetch-*.ipsw")) == []
   end
 end

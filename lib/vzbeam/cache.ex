@@ -31,6 +31,25 @@ defmodule VzBeam.Cache do
 
   @spec ensure(String.t(), map) :: {:ok, atom, map} | {:error, term}
   def ensure(spec, deps \\ default_deps()) do
+    case classify(spec) do
+      :url -> ensure_url(spec, deps)
+      :bad_scheme -> {:error, :unsupported_url_scheme}
+      :local -> ensure_local(spec, deps)
+    end
+  end
+
+  # Classify by URI scheme, not string prefix: a bare "user:pass@host/path"
+  # parses to scheme "user" and must be rejected, not treated as a local path.
+  # "latest" and real paths parse to scheme nil -> local.
+  defp classify(spec) do
+    case URI.parse(spec).scheme do
+      "https" -> :url
+      nil -> :local
+      _ -> :bad_scheme
+    end
+  end
+
+  defp ensure_local(spec, deps) do
     with {:ok, info} <- deps.image_info.(spec),
          :ok <- validate_build(info.build) do
       final = Path.join(dir(), "#{info.build}.ipsw")
@@ -41,6 +60,44 @@ defmodule VzBeam.Cache do
                     do: with({:ok, e} <- put_index(info, final), do: {:ok, :reconciled, e}),
                     else: acquire(spec, info, final, deps)
       end
+    end
+  end
+
+  # URL fetch: download first (the sidecar can't read a remote IPSW's metadata),
+  # then identify the local file. `build` stays the canonical key.
+  defp ensure_url(spec, deps) do
+    with {:ok, url} <- normalize_url(spec), do: acquire_url(url, deps)
+  end
+
+  defp normalize_url(spec) do
+    uri = URI.parse(spec)
+    if uri.host in [nil, ""], do: {:error, :bad_url}, else: {:ok, URI.to_string(uri)}
+  end
+
+  defp acquire_url(url, deps) do
+    pending = Path.join(dir(), "url-fetch-#{System.unique_integer([:positive])}.ipsw")
+
+    with :ok <- File.mkdir_p(dir()),
+         :ok <- deps.download.(url, pending),
+         :ok <- size_sane(pending),
+         {:ok, info} <- identify_url(pending, url, deps),
+         :ok <- validate_build(info.build) do
+      place_url(pending, Path.join(dir(), "#{info.build}.ipsw"), info)
+    else
+      err -> File.rm(pending); err
+    end
+  end
+
+  # image-info reports the CDN redirect URL + "local"; override with the original
+  # request URL + "url" so a later fetch of the same URL dedups (Task 3).
+  defp identify_url(pending, url, deps) do
+    with {:ok, info} <- deps.image_info.(pending), do: {:ok, %{info | url: url, source: "url"}}
+  end
+
+  defp place_url(pending, final, info) do
+    with :ok <- File.rename(pending, final),
+         {:ok, entry} <- put_index(info, final) do
+      {:ok, :fetched, entry}
     end
   end
 
