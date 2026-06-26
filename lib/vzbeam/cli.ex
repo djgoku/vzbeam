@@ -7,16 +7,16 @@ defmodule VzBeam.CLI do
   Commands:
     ls                 list VM bundles
     ip <name>          print a VM's IP (from DHCP leases)
-    fetch <latest|PATH> download/cache a restore image
+    fetch <latest|PATH|URL|BUILD> download/cache a restore image
     images             list cached restore images
     new <name> <base>  clone a stopped base (CoW)
-    new <name> --image <latest|PATH>  restore a fresh base
+    new <name> --image <latest|PATH|URL|BUILD>  restore a fresh base
     rm <name>          delete a stopped bundle
     set <name> [--cpu N] [--mem-gb M]  change a stopped VM's CPU/RAM
     run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]  boot a VM (detached)
     stop <name>        graceful guest shutdown over SSH
     kill <name>        force power-off (SIGTERM, then SIGKILL)
-    ssh <name> [-- cmd…]  ssh into a VM (interactive or one-shot)
+    ssh <name> [-- cmd...]  ssh into a VM (interactive or one-shot)
     displays           show host display(s) + suggested --resolution values
   """
 

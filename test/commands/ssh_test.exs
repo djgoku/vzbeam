@@ -46,4 +46,10 @@ defmodule VzBeam.Commands.SshTest do
     assert {:error, 1, msg} = Ssh.run(["dev"], deps)
     assert IO.iodata_to_binary(msg) =~ "no DHCP lease"
   end
+
+  test "usage error is pure ASCII (the escript renders non-ASCII as \\x{...})" do
+    assert {:error, 2, msg} = Ssh.run([], %{})
+    bin = IO.iodata_to_binary(msg)
+    assert for(<<c <- bin>>, c >= 128, do: c) == [], "ssh usage contains non-ASCII"
+  end
 end
