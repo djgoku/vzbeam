@@ -105,11 +105,32 @@ A download that is not a valid restore image surfaces as `image-info` failing �
 `fetch failed: …`. A malformed/unsupported URL-looking spec is rejected the same
 way.
 
+## Download progress + transport (added after live testing)
+
+Live-testing the first build on real hardware surfaced an **observability** bug,
+not a logic bug: the download worked (pending file grew steadily), but
+`download/2` ran `System.cmd("curl", …, stderr_to_stdout: true)` — it captured
+curl's output and blocked silently for the entire multi-GB transfer, so the
+terminal looked frozen and indistinguishable from a hang. (`fetch latest` shared
+this.) Fix in `download/2`:
+
+- `--progress-bar` — stream a live meter to the terminal (stderr) so the fetch
+  is visibly working. Dropping `stderr_to_stdout: true` lets curl's bar (and any
+  error text) reach the terminal; stdout was empty anyway (`-o` writes the file).
+- `--proto "=https" --proto-redir "=https"` — keep the request *and any
+  redirect* on https, so the https-only guarantee survives `-L` redirects.
+- Error tuple becomes `{:error, {:download_failed, "curl exited <code>"}}` — the
+  human-readable cause is shown live by curl itself; the tuple carries the code.
+
+Verified on real hardware (Apple Silicon, neo): progress bar renders, `--proto`
+blocks an `http://` redirect target, success/404 exit codes map correctly.
+
 ## Components touched
 
 - `lib/vzbeam/cache.ex` — add URL classification + `ensure_url` branch +
   normalized-URL dedup lookup. `put_index/2`, `size_sane/1`, `validate_build/1`,
-  the `curl` `download/2` helper are reused.
+  the `curl` `download/2` helper are reused. `download/2` itself was updated
+  (shared with `latest`) — see Download progress + transport below.
 - `lib/vzbeam/commands/fetch.ex` — **usage string + `@moduledoc` updated** to
   `<latest|PATH|URL>` so help text matches the new spec kind. The verb output
   (`:fetched` / `:cached` / `:reconciled`) is unchanged.

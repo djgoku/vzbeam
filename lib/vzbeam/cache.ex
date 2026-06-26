@@ -193,10 +193,16 @@ defmodule VzBeam.Cache do
     end
   end
 
+  # --progress-bar streams a live meter to the terminal (stderr) so a multi-GB
+  # fetch is visibly working instead of looking hung; without it, capturing
+  # curl's output left the user with a silent, frozen-looking terminal.
+  # --proto/--proto-redir keep the request (and any redirect) on https.
   defp download(url, dst) do
-    case System.cmd("curl", ["-fL", "-o", dst, url], stderr_to_stdout: true) do
+    args = ["-fL", "--progress-bar", "--proto", "=https", "--proto-redir", "=https", "-o", dst, url]
+
+    case System.cmd("curl", args) do
       {_, 0} -> :ok
-      {out, _} -> {:error, {:download_failed, String.trim(out)}}
+      {_, code} -> {:error, {:download_failed, "curl exited #{code}"}}
     end
   end
 end
