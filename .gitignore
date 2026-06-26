@@ -15,8 +15,14 @@ erl_crash.dump
 # SDD scratch (progress ledger, briefs, reports)
 /.superpowers/
 
+# Claude Code agent scratch (worktrees, local state)
+/.claude/
+
 # macOS
 .DS_Store
+
+# Burrito release output
+/burrito_out/
 
 # Session handoff prompts (scratch, not project content)
 /plan-*-prompt.md

@@ -18,6 +18,7 @@ A clean-room rewrite of `sbx`, split into two pieces:
 - `new <name> --image <spec>` (restore) · `new <name> <base>` (CoW clone) · `rm`
 - `run <name> [--gui|--headless] [--share tag=/path]` · `stop` · `kill` · `ssh <name> [-- cmd]`
 - `mix vz.build` — compile + ad-hoc-sign the Swift sidecar into `$VZBEAM_HOME/bin/vz`
+- `MIX_ENV=prod mix release` — package the CLI + the signed sidecar into one self-contained binary (Burrito; no Erlang/Elixir/Swift on the target — see *Packaging* below)
 
 An image `<spec>` (for `fetch` and `new --image`) is one of:
 
@@ -30,10 +31,11 @@ An image `<spec>` (for `fetch` and `new --image`) is one of:
 
 All four resolve to a cached image keyed by its build, so the disk is never duplicated.
 
-The engine has **147 green tests**. On bare-metal Apple Silicon (a release macOS), the boot-dependent
+The engine has **159 green tests**. On bare-metal Apple Silicon (a release macOS), the boot-dependent
 paths are hardware-validated: restore, boot + `--gui`, CoW clone, headless networking + `ssh`, virtiofs
 `--share`, `kill`, and the 2-VM cap (both the engine pre-check and the framework's authoritative
-`VZError 6`). See the hardware-suite results in `docs/superpowers/results/`.
+`VZError 6`) — and the packaged single-file binary boots a guest from its **bundled** sidecar. See the
+hardware-suite results in `docs/superpowers/results/`.
 
 ## Build, test, run
 
@@ -53,6 +55,43 @@ mix vz.build             # builds + ad-hoc-signs the Swift sidecar -> $VZBEAM_HO
 sidecar with the `com.apple.security.virtualization` entitlement on every build. Storage lives under
 `$VZBEAM_HOME` (default `~/.local/share/vzbeam`) — relocate it (e.g. to an external SSD) with that one
 env var.
+
+## Packaging a single-file binary (Burrito)
+
+Produce one self-contained `vzbeam` for Apple-Silicon macOS (≥ 13) — no Elixir/Erlang/Swift
+needed on the target. The ad-hoc-signed `vz` sidecar rides inside the binary's payload.
+
+Requires the Swift toolchain plus Zig 0.15.2, `xz`, and `7z` — provisioned by `mise install` from
+`mise.toml`, with the exact resolved versions captured in `mise.lock` — on the **build** Mac:
+
+```sh
+MIX_ENV=prod mix release         # -> ./burrito_out/vzbeam_macos_silicon  (carries the signed vz)
+scp ./burrito_out/vzbeam_macos_silicon user@mac:/usr/local/bin/vzbeam
+```
+
+`scp`/`rsync`/`tar`/`git` **normally** add no `com.apple.quarantine` xattr, so the ad-hoc-signed
+binary runs as-is. Verify on the target before first run:
+
+```sh
+xattr ./vzbeam | grep -q com.apple.quarantine && echo "quarantined — clear it (below)" || echo "not quarantined"
+```
+
+If it IS quarantined (browser/AirDrop download), clear it once — on macOS 26 a quarantined binary
+**hangs** at launch (Gatekeeper blocks it before the payload unpacks) rather than printing an error:
+
+```sh
+xattr -dr com.apple.quarantine ./vzbeam
+```
+
+`VZBEAM_DEBUG=1 vzbeam <cmd>` prints which `vz` sidecar was selected. The bundled sidecar is
+overridable by `$VZBEAM_VZ` or a `mix vz.build` install in `$VZBEAM_HOME/bin/vz`.
+
+> **macOS 26 (Tahoe) build host:** Zig 0.15.2 resolves libSystem via `xcrun`, which on Tahoe returns
+> the macOS 26 SDK — whose `.tbd` dropped the `arm64-macos` entries Zig needs, so `mix release` fails
+> with `undefined symbol: _malloc_size` (and friends). `SDKROOT` does **not** help — Zig ignores it
+> here. Until Burrito ships a Tahoe-compatible Zig, either build on macOS ≤ 15, or shadow `xcrun`
+> earlier on `PATH` with a wrapper that points `--show-sdk-path` at
+> `/Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk` (the macOS 15 SDK, installed alongside 26).
 
 ## First boot (one-time per base)
 
