@@ -45,6 +45,14 @@ defmodule VzBeam.CacheTest do
     assert e["build"] == "25F80" and e["file"] == "25F80.ipsw"
   end
 
+  test "ensure resolves a cached build id case-insensitively" do
+    assert {:ok, :fetched, _} = Cache.ensure("/tmp/x.ipsw", deps())
+
+    no_sidecar = %{deps() | image_info: fn _ -> {:error, :should_not_call_sidecar} end}
+    assert {:ok, :cached, e} = Cache.ensure("25f80", no_sidecar)
+    assert e["build"] == "25F80"
+  end
+
   test "ensure treats an unknown build token as a local spec (not a cache alias)" do
     # Nothing cached yet, so "25F80" is not a build id — it must go through the
     # local flow (sidecar image-info), not short-circuit as cached.

@@ -51,13 +51,21 @@ defmodule VzBeam.Cache do
     end
   end
 
+  # Case-insensitive: Apple build ids are mixed-case (e.g. 26A5368g) and
+  # effectively case-unique, so a case-fold match is forgiving without being
+  # ambiguous. Scoped to this user-typed alias only — `lookup/1` stays exact
+  # for the internal post-`image-info` dedup. O(n) over a handful of images.
   defp lookup_by_build(build) do
-    with {:ok, entry} <- lookup(build),
-         true <- File.regular?(Path.join(dir(), entry["file"])) do
-      {:ok, entry}
-    else
-      _ -> :error
-    end
+    down = String.downcase(build)
+
+    entry =
+      read_index()["images"]
+      |> Map.values()
+      |> Enum.find(&(is_binary(&1["build"]) and String.downcase(&1["build"]) == down))
+
+    if entry && File.regular?(Path.join(dir(), entry["file"])),
+      do: {:ok, entry},
+      else: :error
   end
 
   # Classify by URI scheme, not string prefix: a bare "user:pass@host/path"
