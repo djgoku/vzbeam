@@ -18,7 +18,10 @@ defmodule VzBeam.MixProject do
     [
       vzbeam: [
         steps: [:assemble, &Burrito.wrap/1],
-        burrito: [targets: [macos_silicon: [os: :darwin, cpu: :aarch64]]]
+        burrito: [
+          targets: [macos_silicon: [os: :darwin, cpu: :aarch64]],
+          extra_steps: [patch: [post: [VzBeam.Release.StageSidecar]]]
+        ]
       ]
     ]
   end
