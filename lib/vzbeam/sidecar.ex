@@ -10,12 +10,29 @@ defmodule VzBeam.Sidecar do
   @spec locate() :: {:ok, Path.t()} | {:error, :not_found}
   def locate do
     [System.get_env("VZBEAM_VZ"), Path.join([Home.root(), "bin", "vz"]),
-     alongside_cli(), System.find_executable("vz")]
+     priv_vz(:code.priv_dir(:vzbeam)), alongside_cli(), System.find_executable("vz")]
     |> Enum.find(&usable?/1)
     |> case do
       nil -> {:error, :not_found}
-      path -> {:ok, path}
+      path -> debug(path); {:ok, path}
     end
+  end
+
+  # Guard :code.priv_dir/1 — it returns {:error, :bad_name} when the app isn't
+  # loaded / has no priv dir, which would crash Path.join/2. Only a Burrito
+  # release actually bundles priv/vz; in dev/escript this yields a path that
+  # doesn't exist (usable?/1 skips it).
+  @doc false
+  @spec priv_vz({:error, term} | charlist | binary) :: nil | Path.t()
+  def priv_vz({:error, _}), do: nil
+  def priv_vz(dir), do: Path.join(to_string(dir), "vz")
+
+  # Troubleshooting aid: a stale $VZBEAM_HOME/bin/vz can shadow the bundle, and
+  # the --version check only catches wire-protocol drift — so make the resolved
+  # path observable.
+  defp debug(path) do
+    if System.get_env("VZBEAM_DEBUG") not in [nil, ""],
+      do: IO.puts(:stderr, "vzbeam: using sidecar #{path}")
   end
 
   defp usable?(p) when is_binary(p) and p != "", do: File.regular?(p)

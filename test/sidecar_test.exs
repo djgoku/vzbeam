@@ -133,4 +133,20 @@ defmodule VzBeam.SidecarTest do
 
     assert {:error, {:vz, "VZErrorDomain", 6, "max VMs"}} = Sidecar.stream("restore", @restore_args)
   end
+
+  test "priv_vz/1 guards against :code.priv_dir error (no crash, yields nil)" do
+    assert nil == Sidecar.priv_vz({:error, :bad_name})
+  end
+
+  test "priv_vz/1 joins the priv dir (charlist or binary) to vz" do
+    assert "/x/vz" == Sidecar.priv_vz(~c"/x")
+    assert "/x/vz" == Sidecar.priv_vz("/x")
+  end
+
+  test "VZBEAM_DEBUG announces the chosen sidecar path to stderr" do
+    System.put_env("VZBEAM_DEBUG", "1")
+    on_exit(fn -> System.delete_env("VZBEAM_DEBUG") end)
+    err = ExUnit.CaptureIO.capture_io(:stderr, fn -> Sidecar.locate() end)
+    assert err =~ "using sidecar #{@fake}"
+  end
 end
