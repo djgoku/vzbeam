@@ -25,4 +25,10 @@ defmodule VzBeam.ManifestTest do
     assert {:ok, %{"name" => "base"}} = VzBeam.Manifest.read_or("base", :nope)
     assert {:error, :nope} = VzBeam.Manifest.read_or("ghost", :nope)
   end
+
+  test "write_to stamps schemaVersion and round-trips via read" do
+    :ok = VzBeam.Manifest.write_to(VzBeam.Manifest.path("base"), %{"name" => "base", "macAddress" => "5e:aa"})
+    assert {:ok, %{"name" => "base", "macAddress" => "5e:aa", "schemaVersion" => 1}} =
+             VzBeam.Manifest.read("base")
+  end
 end

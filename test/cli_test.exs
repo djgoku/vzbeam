@@ -15,4 +15,9 @@ defmodule VzBeam.CLITest do
     assert {:error, 2, msg} = VzBeam.CLI.run(["bogus"])
     assert IO.iodata_to_binary(msg) =~ "unknown command: bogus"
   end
+
+  test "set dispatches (usage error without flags) and appears in help" do
+    assert {:error, 2, _} = VzBeam.CLI.run(["set", "dev"])
+    assert IO.iodata_to_binary(elem(VzBeam.CLI.run(["--help"]), 1)) =~ "set <name>"
+  end
 end
