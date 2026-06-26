@@ -1,10 +1,9 @@
 defmodule VzBeam.Commands.New do
   @moduledoc "new <name> <base> | new <name> --image <latest|PATH>"
-  alias VzBeam.{Home, Manifest, Pidfile, AtomicFile, Cache, Defaults}
+  alias VzBeam.{Home, Manifest, Pidfile, Cache, Defaults}
 
   @reserved ~w(cache keys bin run.lock)
   @gb 1024 * 1024 * 1024
-  @schema_version 1
 
   def run(args), do: run(args, default_deps())
 
@@ -103,7 +102,7 @@ defmodule VzBeam.Commands.New do
   end
 
   defp write_manifest(dir, map) do
-    AtomicFile.write(Path.join(dir, "config.json"), Jason.encode!(Map.put(map, "schemaVersion", @schema_version), pretty: true))
+    Manifest.write_to(Path.join(dir, "config.json"), map)
   end
 
   defp create_sparse(path, size) do
