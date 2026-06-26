@@ -1,2 +1,4 @@
 [tools]
+"conda:xz-tools" = "latest"
 zig = "0.15.2"
+"conda:7zip" = "latest"
