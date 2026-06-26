@@ -66,7 +66,21 @@ defmodule VzBeam.Cache do
   # URL fetch: download first (the sidecar can't read a remote IPSW's metadata),
   # then identify the local file. `build` stays the canonical key.
   defp ensure_url(spec, deps) do
-    with {:ok, url} <- normalize_url(spec), do: acquire_url(url, deps)
+    with {:ok, url} <- normalize_url(spec) do
+      case lookup_by_url(url) do
+        {:ok, entry} -> {:ok, :cached, entry}
+        :error -> acquire_url(url, deps)
+      end
+    end
+  end
+
+  # Pre-download shortcut only: an exact normalized-URL hit whose file still exists.
+  defp lookup_by_url(url) do
+    entry = read_index()["images"] |> Map.values() |> Enum.find(&(&1["url"] == url))
+
+    if entry && File.regular?(Path.join(dir(), entry["file"])),
+      do: {:ok, entry},
+      else: :error
   end
 
   defp normalize_url(spec) do
@@ -100,11 +114,23 @@ defmodule VzBeam.Cache do
   end
 
   defp place_url(pending, final, info) do
-    with :ok <- File.rename(pending, final),
-         {:ok, entry} <- put_index(info, final) do
-      {:ok, :fetched, entry}
-    else
-      err -> File.rm(pending); err
+    case lookup(info.build) do
+      {:ok, entry} ->
+        File.rm(pending)
+        {:ok, :cached, entry}
+
+      :error ->
+        if File.regular?(final) do
+          File.rm(pending)
+          with {:ok, e} <- put_index(info, final), do: {:ok, :reconciled, e}
+        else
+          with :ok <- File.rename(pending, final),
+               {:ok, entry} <- put_index(info, final) do
+            {:ok, :fetched, entry}
+          else
+            err -> File.rm(pending); err
+          end
+        end
     end
   end
 

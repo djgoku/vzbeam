@@ -113,4 +113,35 @@ defmodule VzBeam.CacheTest do
     assert e["url"] == "https://host.example/x.ipsw"
     refute e["url"] =~ "#"
   end
+
+  test "ensure dedups a repeat URL fetch without downloading again" do
+    assert {:ok, :fetched, _} = Cache.ensure("https://host.example/x.ipsw", url_deps())
+
+    no_dl = %{url_deps() | download: fn _u, _d -> {:error, :should_not_download} end}
+    assert {:ok, :cached, e} = Cache.ensure("https://host.example/x.ipsw", no_dl)
+    assert e["build"] == "25F80"
+  end
+
+  test "ensure dedups two URL fragments of the same image without re-downloading" do
+    assert {:ok, :fetched, _} = Cache.ensure("https://host.example/x.ipsw#a", url_deps())
+
+    no_dl = %{url_deps() | download: fn _u, _d -> {:error, :should_not_download} end}
+    assert {:ok, :cached, _} = Cache.ensure("https://host.example/x.ipsw#b", no_dl)
+  end
+
+  test "ensure discards the pending download when a different URL resolves to a cached build" do
+    assert {:ok, :fetched, _} = Cache.ensure("https://host.example/a.ipsw", url_deps())
+    # Different URL, same build -> URL scan misses, downloads, then build is already cached.
+    assert {:ok, :cached, e} = Cache.ensure("https://host.example/b.ipsw", url_deps())
+    assert e["build"] == "25F80"
+    assert Path.wildcard(Path.join(Cache.dir(), "url-fetch-*.ipsw")) == []
+  end
+
+  test "ensure reconciles an orphaned final file reached via a URL fetch" do
+    File.mkdir_p!(Cache.dir())
+    File.write!(Path.join(Cache.dir(), "25F80.ipsw"), "ORPHAN")
+    assert {:ok, :reconciled, e} = Cache.ensure("https://host.example/x.ipsw", url_deps())
+    assert e["build"] == "25F80"
+    assert Path.wildcard(Path.join(Cache.dir(), "url-fetch-*.ipsw")) == []
+  end
 end
