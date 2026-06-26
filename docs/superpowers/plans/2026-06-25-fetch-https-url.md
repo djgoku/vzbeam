@@ -189,6 +189,8 @@ with a dispatcher plus the renamed local body:
     with :ok <- File.rename(pending, final),
          {:ok, entry} <- put_index(info, final) do
       {:ok, :fetched, entry}
+    else
+      err -> File.rm(pending); err
     end
   end
 ```
@@ -369,11 +371,16 @@ and replace `place_url/3`:
           with :ok <- File.rename(pending, final),
                {:ok, entry} <- put_index(info, final) do
             {:ok, :fetched, entry}
+          else
+            err -> File.rm(pending); err
           end
         end
     end
   end
 ```
+
+> The inner `else` mirrors `acquire/4`/Task 1's `place_url`: clean up the pending
+> file if `File.rename`/`put_index` fail rather than leaking it.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
