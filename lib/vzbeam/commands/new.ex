@@ -1,5 +1,5 @@
 defmodule VzBeam.Commands.New do
-  @moduledoc "new <name> <base> | new <name> --image <latest|PATH>"
+  @moduledoc "new <name> <base> | new <name> --image <latest|PATH|URL|BUILD>"
   alias VzBeam.{Home, Manifest, Pidfile, Cache, Defaults}
 
   @reserved ~w(cache keys bin run.lock)
@@ -18,7 +18,7 @@ defmodule VzBeam.Commands.New do
         {[name, base], nil} -> clone(name, base, deps)
         {[name], img} when is_binary(img) -> restore(name, img, opts, deps)
         {[_, _], img} when is_binary(img) -> {:error, 2, "new: --image is mutually exclusive with a base\n"}
-        _ -> {:error, 2, "usage: vzbeam new <name> <base> | new <name> --image <latest|PATH>\n"}
+        _ -> {:error, 2, "usage: vzbeam new <name> <base> | new <name> --image <latest|PATH|URL|BUILD>\n"}
       end
     end
   end

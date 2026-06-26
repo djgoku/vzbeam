@@ -26,8 +26,13 @@ defmodule VzBeam.CLITest do
     assert IO.iodata_to_binary(elem(VzBeam.CLI.run(["--help"]), 1)) =~ "displays"
   end
 
-  test "fetch help line documents the URL spec kind" do
+  test "fetch help line documents every image spec kind" do
     assert {:ok, usage} = VzBeam.CLI.run(["--help"])
-    assert IO.iodata_to_binary(usage) =~ "fetch <latest|PATH|URL>"
+    assert IO.iodata_to_binary(usage) =~ "fetch <latest|PATH|URL|BUILD>"
+  end
+
+  test "new --image help line documents every image spec kind" do
+    assert {:ok, usage} = VzBeam.CLI.run(["--help"])
+    assert IO.iodata_to_binary(usage) =~ "new <name> --image <latest|PATH|URL|BUILD>"
   end
 end
