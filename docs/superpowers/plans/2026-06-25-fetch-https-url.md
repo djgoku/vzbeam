@@ -76,6 +76,10 @@ Add to `test/cache_test.exs` (inside the module, after the existing tests). Add 
     assert {:error, :unsupported_url_scheme} = Cache.ensure("http://host.example/x.ipsw", url_deps())
   end
 
+  test "ensure rejects a non-http unsupported scheme" do
+    assert {:error, :unsupported_url_scheme} = Cache.ensure("ftp://host.example/x.ipsw", url_deps())
+  end
+
   test "ensure rejects an https URL with no host" do
     assert {:error, :bad_url} = Cache.ensure("https://", url_deps())
   end
@@ -90,7 +94,7 @@ Add to `test/cache_test.exs` (inside the module, after the existing tests). Add 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `mix test test/cache_test.exs`
-Expected: the four new tests FAIL (the URL spec currently falls into the local flow — `image_info` is called with the raw URL string and there is no `:url`/scheme handling).
+Expected: the five new tests FAIL (the URL spec currently falls into the local flow — `image_info` is called with the raw URL string and there is no `:url`/scheme handling).
 
 - [ ] **Step 3: Implement classification + the happy-path URL branch**
 
@@ -125,11 +129,14 @@ with a dispatcher plus the renamed local body:
     end
   end
 
+  # Classify by URI scheme, not string prefix: a bare "user:pass@host/path"
+  # parses to scheme "user" and must be rejected, not treated as a local path.
+  # "latest" and real paths parse to scheme nil -> local.
   defp classify(spec) do
-    cond do
-      String.starts_with?(spec, "https://") -> :url
-      String.starts_with?(spec, "http://") -> :bad_scheme
-      true -> :local
+    case URI.parse(spec).scheme do
+      "https" -> :url
+      nil -> :local
+      _ -> :bad_scheme
     end
   end
 
@@ -390,12 +397,13 @@ Update the user-facing usage/help so the new spec kind is documented.
 - Modify: `lib/vzbeam/commands/fetch.ex`
 - Modify: `lib/vzbeam/cli.ex`
 - Test: `test/commands/fetch_test.exs`
+- Test: `test/cli_test.exs`
 
 **Interfaces:**
 - Consumes: nothing new.
-- Produces: `Fetch.run/2` arity-mismatch path returns a usage string containing `URL`.
+- Produces: `Fetch.run/2` arity-mismatch path returns a usage string containing `URL`; `VzBeam.CLI.run(["--help"])` output contains `fetch <latest|PATH|URL>`.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
 
 Replace the existing "usage error with no spec" test in `test/commands/fetch_test.exs`:
 
@@ -406,10 +414,19 @@ Replace the existing "usage error with no spec" test in `test/commands/fetch_tes
   end
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+And add to `test/cli_test.exs` (following the existing "appears in help" pattern):
 
-Run: `mix test test/commands/fetch_test.exs`
-Expected: FAIL — the usage string is currently `usage: vzbeam fetch <latest|PATH>` (no `URL`).
+```elixir
+  test "fetch help line documents the URL spec kind" do
+    assert {:ok, usage} = VzBeam.CLI.run(["--help"])
+    assert IO.iodata_to_binary(usage) =~ "fetch <latest|PATH|URL>"
+  end
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `mix test test/commands/fetch_test.exs test/cli_test.exs`
+Expected: FAIL — the usage strings are currently `<latest|PATH>` (no `URL`) in both `fetch.ex` and the `cli.ex` `@usage` help line.
 
 - [ ] **Step 3: Update the usage/help strings**
 
@@ -429,15 +446,15 @@ In `lib/vzbeam/cli.ex`, the `fetch` line in `@usage` (line 10):
     fetch <latest|PATH|URL> download/cache a restore image
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `mix test test/commands/fetch_test.exs`
+Run: `mix test test/commands/fetch_test.exs test/cli_test.exs`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add lib/vzbeam/commands/fetch.ex lib/vzbeam/cli.ex test/commands/fetch_test.exs
+git add lib/vzbeam/commands/fetch.ex lib/vzbeam/cli.ex test/commands/fetch_test.exs test/cli_test.exs
 git commit -m "docs(fetch): document the URL spec kind in usage/help"
 ```
 
