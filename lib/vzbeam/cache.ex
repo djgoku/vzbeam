@@ -143,24 +143,24 @@ defmodule VzBeam.Cache do
     with {:ok, info} <- deps.image_info.(pending), do: {:ok, %{info | url: url, source: "url"}}
   end
 
+  # Key on the actual file, not the index: a stale index entry whose `{build}.ipsw`
+  # was deleted must not discard the fresh download and report a phantom cache hit.
   defp place_url(pending, final, info) do
-    case lookup(info.build) do
-      {:ok, entry} ->
-        File.rm(pending)
-        {:ok, :cached, entry}
+    if File.regular?(final) do
+      # The real image is already on disk — the download was redundant.
+      File.rm(pending)
 
-      :error ->
-        if File.regular?(final) do
-          File.rm(pending)
-          with {:ok, e} <- put_index(info, final), do: {:ok, :reconciled, e}
-        else
-          with :ok <- File.rename(pending, final),
-               {:ok, entry} <- put_index(info, final) do
-            {:ok, :fetched, entry}
-          else
-            err -> File.rm(pending); err
-          end
-        end
+      case lookup(info.build) do
+        {:ok, entry} -> {:ok, :cached, entry}
+        :error -> with {:ok, e} <- put_index(info, final), do: {:ok, :reconciled, e}
+      end
+    else
+      with :ok <- File.rename(pending, final),
+           {:ok, entry} <- put_index(info, final) do
+        {:ok, :fetched, entry}
+      else
+        err -> File.rm(pending); err
+      end
     end
   end
 

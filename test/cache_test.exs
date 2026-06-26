@@ -171,6 +171,18 @@ defmodule VzBeam.CacheTest do
     assert Path.wildcard(Path.join(Cache.dir(), "url-fetch-*.ipsw")) == []
   end
 
+  test "url fetch promotes the download when the index entry is stale (file gone)" do
+    assert {:ok, :fetched, _} = Cache.ensure("https://host.example/a.ipsw", url_deps())
+    # Stale index: the file is gone but the build entry remains.
+    File.rm!(Path.join(Cache.dir(), "25F80.ipsw"))
+    # A different URL (URL scan misses) downloads again; it must NOT report
+    # :cached against the missing file — it must promote the fresh download.
+    assert {:ok, :fetched, e} = Cache.ensure("https://host.example/b.ipsw", url_deps())
+    assert e["build"] == "25F80"
+    assert File.regular?(Path.join(Cache.dir(), "25F80.ipsw"))
+    assert Path.wildcard(Path.join(Cache.dir(), "url-fetch-*.ipsw")) == []
+  end
+
   test "ensure reconciles an orphaned final file reached via a URL fetch" do
     File.mkdir_p!(Cache.dir())
     File.write!(Path.join(Cache.dir(), "25F80.ipsw"), "ORPHAN")
