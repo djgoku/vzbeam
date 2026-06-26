@@ -59,13 +59,14 @@ defmodule VzBeam.Commands.New do
 
     with :ok <- validate_name(name),
          :ok <- refute_exists(name),
-         {:ok, _status, entry} <- deps.ensure.(spec),
+         {:ok, status, entry} <- deps.ensure.(spec),
+         :ok <- announce_image(deps, status, entry),
          :ok <- clear_pending(pending),
          :ok <- File.mkdir_p(pending),
          :ok <- create_sparse(Path.join(pending, "disk.img"), disk_bytes),
          {:ok, r} <- deps.restore.(%{ipsw: Path.join(Cache.dir(), entry["file"]),
              disk: Path.join(pending, "disk.img"), aux: Path.join(pending, "aux.img"),
-             disk_size: disk_bytes, cpu: cpu, mem: mem_bytes}),
+             disk_size: disk_bytes, cpu: cpu, mem: mem_bytes}, restore_reporter(deps)),
          :ok <- write_manifest(pending, restore_manifest(name, entry, r, cpu, mem_bytes)),
          :ok <- File.rename(pending, Home.bundle_dir(name)) do
       {:ok, ["created ", name, " (cpu=#{cpu} mem=#{div(mem_bytes, @gb)}G disk=#{div(disk_bytes, @gb)}G)\n"]}
@@ -81,6 +82,34 @@ defmodule VzBeam.Commands.New do
       "macAddress" => r.mac_address, "cpuCount" => cpu, "memoryBytes" => mem_bytes,
       "createdAt" => now()}
   end
+
+  # --- progress feedback ---------------------------------------------------
+  # Restore is a multi-minute install; without these the terminal is silent
+  # the whole time (and the cache-hit path gave no sign it skipped the download).
+  defp announce_image(deps, status, e) do
+    deps.progress.(image_line(status, e))
+    :ok
+  end
+
+  defp image_line(:fetched, e), do: ["fetched ", e["version"], " (", e["build"], ")\n"]
+  # :cached and :reconciled both mean the image was already on disk.
+  defp image_line(_status, e), do: ["using cached image ", e["version"], " (", e["build"], ")\n"]
+
+  defp restore_reporter(deps) do
+    fn
+      {:event, "progress", %{"fraction" => f}} when is_number(f) ->
+        deps.progress.(["\rrestoring... ", Integer.to_string(round(f * 100)), "%"])
+
+      {:event, "restored", _} ->
+        deps.progress.("\rrestoring... 100%\n")
+
+      _ ->
+        :ok
+    end
+  end
+
+  # ASCII only: the escript renders non-ASCII codepoints as \x{...} literals.
+  defp default_progress(io), do: IO.write(:stderr, io)
 
   # --- helpers -------------------------------------------------------------
   defp validate_name(n) do
@@ -132,5 +161,6 @@ defmodule VzBeam.Commands.New do
   defp error({:error, reason}), do: {:error, 1, ["new failed: ", inspect(reason), "\n"]}
 
   defp default_deps,
-    do: %{reid: &VzBeam.Sidecar.reid/0, ensure: &Cache.ensure/1, restore: &VzBeam.Sidecar.restore/1}
+    do: %{reid: &VzBeam.Sidecar.reid/0, ensure: &Cache.ensure/1,
+          restore: &VzBeam.Sidecar.restore/2, progress: &default_progress/1}
 end
