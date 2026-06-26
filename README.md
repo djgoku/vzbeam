@@ -63,7 +63,8 @@ binary runs as-is. Verify on the target before first run:
 xattr -p com.apple.quarantine ./vzbeam    # no output = not quarantined, good
 ```
 
-If it IS quarantined (browser/AirDrop download), clear it once:
+If it IS quarantined (browser/AirDrop download), clear it once — on macOS 26 a quarantined binary
+**hangs** at launch (Gatekeeper blocks it before the payload unpacks) rather than printing an error:
 
 ```sh
 xattr -dr com.apple.quarantine ./vzbeam
@@ -72,8 +73,12 @@ xattr -dr com.apple.quarantine ./vzbeam
 `VZBEAM_DEBUG=1 vzbeam <cmd>` prints which `vz` sidecar was selected. The bundled sidecar is
 overridable by `$VZBEAM_VZ` or a `mix vz.build` install in `$VZBEAM_HOME/bin/vz`.
 
-> **macOS 26 (Tahoe) note:** Zig 0.15.2's linker fails against the macOS 26 SDK; point Zig at the
-> macOS 15 SDK until Burrito ships a Tahoe-compatible Zig.
+> **macOS 26 (Tahoe) build host:** Zig 0.15.2 resolves libSystem via `xcrun`, which on Tahoe returns
+> the macOS 26 SDK — whose `.tbd` dropped the `arm64-macos` entries Zig needs, so `mix release` fails
+> with `undefined symbol: _malloc_size` (and friends). `SDKROOT` does **not** help — Zig ignores it
+> here. Until Burrito ships a Tahoe-compatible Zig, either build on macOS ≤ 15, or shadow `xcrun`
+> earlier on `PATH` with a wrapper that points `--show-sdk-path` at
+> `/Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk` (the macOS 15 SDK, installed alongside 26).
 
 ## First boot (one-time per base)
 
