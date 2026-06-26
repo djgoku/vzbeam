@@ -18,7 +18,7 @@ A clean-room rewrite of `sbx`, split into two pieces:
 - `new <name> --image <spec>` (restore) · `new <name> <base>` (CoW clone) · `rm`
 - `run <name> [--gui|--headless] [--share tag=/path]` · `stop` · `kill` · `ssh <name> [-- cmd]`
 - `mix vz.build` — compile + ad-hoc-sign the Swift sidecar into `$VZBEAM_HOME/bin/vz`
-- `mix release` — package the CLI + the signed sidecar into one self-contained binary (Burrito; no Erlang/Elixir/Swift on the target — see *Packaging* below)
+- `MIX_ENV=prod mix release` — package the CLI + the signed sidecar into one self-contained binary (Burrito; no Erlang/Elixir/Swift on the target — see *Packaging* below)
 
 An image `<spec>` (for `fetch` and `new --image`) is one of:
 
@@ -61,8 +61,8 @@ env var.
 Produce one self-contained `vzbeam` for Apple-Silicon macOS (≥ 13) — no Elixir/Erlang/Swift
 needed on the target. The ad-hoc-signed `vz` sidecar rides inside the binary's payload.
 
-Requires the Swift toolchain plus Zig 0.15.2, `xz`, and `7z` — all pinned in `mise.toml`, so
-`mise install` provisions them — on the **build** Mac:
+Requires the Swift toolchain plus Zig 0.15.2, `xz`, and `7z` — provisioned by `mise install` from
+`mise.toml`, with the exact resolved versions captured in `mise.lock` — on the **build** Mac:
 
 ```sh
 MIX_ENV=prod mix release         # -> ./burrito_out/vzbeam_macos_silicon  (carries the signed vz)
@@ -73,7 +73,7 @@ scp ./burrito_out/vzbeam_macos_silicon user@mac:/usr/local/bin/vzbeam
 binary runs as-is. Verify on the target before first run:
 
 ```sh
-xattr -p com.apple.quarantine ./vzbeam    # no output = not quarantined, good
+xattr ./vzbeam | grep -q com.apple.quarantine && echo "quarantined — clear it (below)" || echo "not quarantined"
 ```
 
 If it IS quarantined (browser/AirDrop download), clear it once — on macOS 26 a quarantined binary
