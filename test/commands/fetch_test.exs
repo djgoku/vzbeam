@@ -13,7 +13,8 @@ defmodule VzBeam.Commands.FetchTest do
     assert IO.iodata_to_binary(msg) =~ "bad_build_token"
   end
 
-  test "usage error with no spec" do
-    assert {:error, 2, _} = VzBeam.Commands.Fetch.run([], %{ensure: fn _ -> :unused end})
+  test "usage error with no spec mentions the URL spec kind" do
+    assert {:error, 2, msg} = VzBeam.Commands.Fetch.run([], %{ensure: fn _ -> :unused end})
+    assert IO.iodata_to_binary(msg) =~ "URL"
   end
 end

@@ -20,9 +20,10 @@ defmodule VzBeam.Commands.NewTest do
     %{
       reid: fn -> {:ok, %{machine_identifier: "NEW", mac_address: "5e:ff"}} end,
       ensure: fn _ -> {:ok, :fetched, %{"version" => "26.5.1", "build" => "25F80", "file" => "25F80.ipsw"}} end,
-      restore: fn opts -> File.touch!(opts.aux);
+      restore: fn opts, _report -> File.touch!(opts.aux);
         {:ok, %{machine_identifier: "RID", hardware_model: "HW2", mac_address: "5e:ab",
-                version: "26.5.1", build: "25F80"}} end
+                version: "26.5.1", build: "25F80"}} end,
+      progress: fn _io -> :ok end
     }
   end
 
@@ -56,6 +57,35 @@ defmodule VzBeam.Commands.NewTest do
 
   test "--image is mutually exclusive with a base" do
     assert {:error, 2, _} = New.run(["dev", "base", "--image", "latest"], deps())
+  end
+
+  test "restore announces a cache hit and reports install progress", %{home: _home} do
+    me = self()
+
+    deps = %{
+      deps()
+      | ensure: fn _ -> {:ok, :cached, %{"version" => "26.5.1", "build" => "25F80", "file" => "25F80.ipsw"}} end,
+        restore: fn opts, report ->
+          File.touch!(opts.aux)
+          report.({:event, "progress", %{"fraction" => 0.5}})
+          report.({:event, "restored", %{}})
+          {:ok, %{machine_identifier: "RID", hardware_model: "HW2", mac_address: "5e:ab",
+                  version: "26.5.1", build: "25F80"}}
+        end,
+        progress: fn io -> send(me, {:progress, IO.iodata_to_binary(io)}) end
+    }
+
+    assert {:ok, _} = New.run(["fresh", "--image", "https://h/x.ipsw"], deps)
+    assert_received {:progress, "using cached image 26.5.1 (25F80)\n"}
+    assert_received {:progress, "\rrestoring... 50%"}
+    assert_received {:progress, "\rrestoring... 100%\n"}
+  end
+
+  test "restore announces a fresh fetch (not a cache hit)", %{home: _home} do
+    me = self()
+    deps = %{deps() | progress: fn io -> send(me, {:progress, IO.iodata_to_binary(io)}) end}
+    assert {:ok, _} = New.run(["fresh", "--image", "https://h/x.ipsw"], deps)
+    assert_received {:progress, "fetched 26.5.1 (25F80)\n"}
   end
 
   test "clone clears a stale .pending and does not nest", %{home: home} do

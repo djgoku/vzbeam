@@ -25,4 +25,9 @@ defmodule VzBeam.CLITest do
     assert {:error, 2, _} = VzBeam.CLI.run(["displays", "extra"])  # routed to the verb, not help
     assert IO.iodata_to_binary(elem(VzBeam.CLI.run(["--help"]), 1)) =~ "displays"
   end
+
+  test "fetch help line documents the URL spec kind" do
+    assert {:ok, usage} = VzBeam.CLI.run(["--help"])
+    assert IO.iodata_to_binary(usage) =~ "fetch <latest|PATH|URL>"
+  end
 end
