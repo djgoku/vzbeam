@@ -7,7 +7,7 @@ defmodule VzBeam.CLI do
   Commands:
     ls                 list VM bundles
     ip <name>          print a VM's IP (from DHCP leases)
-    fetch <latest|PATH> download/cache a restore image
+    fetch <latest|PATH|URL> download/cache a restore image
     images             list cached restore images
     new <name> <base>  clone a stopped base (CoW)
     new <name> --image <latest|PATH>  restore a fresh base

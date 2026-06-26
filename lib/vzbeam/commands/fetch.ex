@@ -1,5 +1,5 @@
 defmodule VzBeam.Commands.Fetch do
-  @moduledoc "fetch <latest|PATH> — download/cache a restore image."
+  @moduledoc "fetch <latest|PATH|URL> — download/cache a restore image."
 
   @spec run([String.t()]) :: {:ok, iodata} | {:error, non_neg_integer, iodata}
   def run(args), do: run(args, %{ensure: &VzBeam.Cache.ensure/1})
@@ -11,7 +11,7 @@ defmodule VzBeam.Commands.Fetch do
     end
   end
 
-  def run(_, _), do: {:error, 2, "usage: vzbeam fetch <latest|PATH>\n"}
+  def run(_, _), do: {:error, 2, "usage: vzbeam fetch <latest|PATH|URL>\n"}
 
   defp verb(:cached), do: "already cached"
   defp verb(_), do: "fetched"
