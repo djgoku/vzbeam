@@ -20,8 +20,11 @@ defmodule VzBeam.Displays do
 
   defp one(%{"_spdisplays_pixels" => px} = d) do
     case dims(px) do
-      {w, h} -> %{name: d["_name"] || "Display", width: w, height: h,
-                  main: d["spdisplays_main"] == "spdisplays_yes", looks_like: d["_spdisplays_resolution"]}
+      {w, h} ->
+        res = d["_spdisplays_resolution"]
+        %{name: d["_name"] || "Display", width: w, height: h,
+          main: d["spdisplays_main"] == "spdisplays_yes",
+          looks_like: if(is_binary(res), do: res, else: nil)}
       :error -> nil
     end
   end

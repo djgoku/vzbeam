@@ -23,4 +23,12 @@ defmodule VzBeam.DisplaysTest do
     assert Displays.parse(~s({"other":1})) == []
     assert Displays.parse(~s({"SPDisplaysDataType":[{"spdisplays_ndrvs":[{"_name":"No Pixels"}]}]})) == []
   end
+
+  test "non-binary _spdisplays_resolution is coerced to nil so looks_like stays String.t()|nil" do
+    json = ~s({"SPDisplaysDataType":[{"spdisplays_ndrvs":[{"_name":"Test","_spdisplays_pixels":"100 x 200","_spdisplays_resolution":123}]}]})
+    [d] = Displays.parse(json)
+    assert d.looks_like == nil
+    assert d.width == 100
+    assert d.height == 200
+  end
 end

@@ -9,6 +9,7 @@ defmodule VzBeam.Commands.DisplaysTest do
     s = IO.iodata_to_binary(out)
     assert s =~ "Color LCD" and s =~ "3024 x 1964" and s =~ "suggested --resolution"
     assert s =~ "3024x1964" and s =~ "1920x1200"
+    assert s =~ "looks like"
   end
 
   test "no display -> friendly fallback, exit 0" do
