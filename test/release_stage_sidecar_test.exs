@@ -15,7 +15,9 @@ defmodule VzBeam.Release.StageSidecarTest do
   test "stage/2 copies the built product into the payload priv/ as an executable",
        %{work: work, product: product} do
     ctx = %{work_dir: work}
-    assert ^ctx = StageSidecar.stage(ctx, fn -> {:ok, product} end)
+    # with_io/1 swallows the "burrito: staged signed vz -> ..." line so the suite stays quiet.
+    {result, _io} = ExUnit.CaptureIO.with_io(fn -> StageSidecar.stage(ctx, fn -> {:ok, product} end) end)
+    assert ^ctx = result
     dest = Path.join(work, "lib/vzbeam-0.1.0/priv/vz")
     assert File.read!(dest) == "FAKE-VZ-BYTES"
     assert (File.stat!(dest).mode &&& 0o111) != 0
