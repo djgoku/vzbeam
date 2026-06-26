@@ -12,6 +12,7 @@ defmodule VzBeam.CLI do
     new <name> <base>  clone a stopped base (CoW)
     new <name> --image <latest|PATH>  restore a fresh base
     rm <name>          delete a stopped bundle
+    set <name> [--cpu N] [--mem-gb M]  change a stopped VM's CPU/RAM
     run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]  boot a VM (detached)
     stop <name>        graceful guest shutdown over SSH
     kill <name>        force power-off (SIGTERM, then SIGKILL)
@@ -36,6 +37,7 @@ defmodule VzBeam.CLI do
   def run(["images" | rest]), do: VzBeam.Commands.Images.run(rest)
   def run(["new" | rest]), do: VzBeam.Commands.New.run(rest)
   def run(["rm" | rest]), do: VzBeam.Commands.Rm.run(rest)
+  def run(["set" | rest]), do: VzBeam.Commands.Set.run(rest)
   def run(["run" | rest]), do: VzBeam.Commands.Run.run(rest)
   def run(["stop" | rest]), do: VzBeam.Commands.Stop.run(rest)
   def run(["kill" | rest]), do: VzBeam.Commands.Kill.run(rest)
