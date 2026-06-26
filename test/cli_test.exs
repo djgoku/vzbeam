@@ -35,4 +35,11 @@ defmodule VzBeam.CLITest do
     assert {:ok, usage} = VzBeam.CLI.run(["--help"])
     assert IO.iodata_to_binary(usage) =~ "new <name> --image <latest|PATH|URL|BUILD>"
   end
+
+  test "help text is pure ASCII (the escript renders non-ASCII as \\x{...} literals)" do
+    assert {:ok, usage} = VzBeam.CLI.run(["--help"])
+    bin = IO.iodata_to_binary(usage)
+    non_ascii = for <<c <- bin>>, c >= 128, do: c
+    assert non_ascii == [], "help text contains non-ASCII bytes: #{inspect(non_ascii)}"
+  end
 end

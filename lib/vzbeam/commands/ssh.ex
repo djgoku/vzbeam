@@ -14,14 +14,14 @@ defmodule VzBeam.Commands.Ssh do
       case rest do
         ["--" | cmd] when cmd != [] -> oneshot(base ++ cmd, deps)
         [] -> interactive(base, deps)
-        _ -> {:error, 2, "usage: vzbeam ssh <name> [-- cmd…]\n"}
+        _ -> {:error, 2, "usage: vzbeam ssh <name> [-- cmd...]\n"}
       end
     else
       err -> error(err)
     end
   end
 
-  def run(_, _), do: {:error, 2, "usage: vzbeam ssh <name> [-- cmd…]\n"}
+  def run(_, _), do: {:error, 2, "usage: vzbeam ssh <name> [-- cmd...]\n"}
 
   defp oneshot(args, deps) do
     case deps.run_cmd.(args) do

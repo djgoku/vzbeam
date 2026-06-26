@@ -16,7 +16,7 @@ defmodule VzBeam.CLI do
     run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]  boot a VM (detached)
     stop <name>        graceful guest shutdown over SSH
     kill <name>        force power-off (SIGTERM, then SIGKILL)
-    ssh <name> [-- cmd…]  ssh into a VM (interactive or one-shot)
+    ssh <name> [-- cmd...]  ssh into a VM (interactive or one-shot)
     displays           show host display(s) + suggested --resolution values
   """
 
