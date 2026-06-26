@@ -6,12 +6,22 @@ defmodule VzBeam.MixProject do
       app: :vzbeam,
       version: "0.1.0",
       elixir: "~> 1.17",
-      escript: [main_module: VzBeam.CLI],
+      escript: [main_module: VzBeam.CLI, app: nil],
+      releases: releases(),
       deps: deps()
     ]
   end
 
-  def application, do: [extra_applications: [:logger]]
+  def application, do: [mod: {VzBeam.Application, []}, extra_applications: [:logger]]
 
-  defp deps, do: [{:jason, "~> 1.4"}]
+  defp releases do
+    [
+      vzbeam: [
+        steps: [:assemble, &Burrito.wrap/1],
+        burrito: [targets: [macos_silicon: [os: :darwin, cpu: :aarch64]]]
+      ]
+    ]
+  end
+
+  defp deps, do: [{:jason, "~> 1.4"}, {:burrito, "~> 1.0"}]
 end
