@@ -321,6 +321,10 @@ The virtualization entitlement is **non-restricted** (works with ad-hoc *and* De
 `com.apple.vm.networking`, no Apple-approval gate). **Validate at packaging time:** cold-start latency
 on hot commands (`ssh`/`ip`) and the codesign/notarization mechanics.
 
+> **Delivered (2026-06):** the "two artifacts" ship as **one file** — `vz` rides ad-hoc-signed in the
+> Burrito payload's `priv/` (its own signature; the wrapper never signs it). See
+> `specs/2026-06-25-vzbeam-burrito-packaging-design.md`.
+
 ---
 
 ## 12. Validated facts & gotchas that must survive

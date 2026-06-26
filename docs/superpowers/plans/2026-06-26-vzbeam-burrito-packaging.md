@@ -23,7 +23,7 @@ _Every task implicitly includes these (verbatim from the spec):_
 - **Deliverable build command: `MIX_ENV=prod mix release`.** (`MIX_ENV != prod` always re-extracts — handy in the spike loop, not the shipped mode.)
 - **`mix test` and `mix escript.build` stay green throughout.** No `Mix.*` on the engine's runtime path; no release runtime hooks (`env.sh`/`vm.args`/cookie/node).
 - **This box CANNOT boot VZ guests** (no nested macOS virtualization). VM-boot validation is HW-gated to the real Mac (`dj_goku@10.5.0.48`); everything else is provable here.
-- **Force a clean install between packaging iterations** with `rm -rf "$(./burrito_out/vzbeam maintenance directory)"` (`maintenance uninstall` prompts interactively — don't script it), or bump the version — Burrito reuses a content-addressed install keyed by name/version/ERTS and will otherwise run a stale extracted sidecar.
+- **Force a clean install between packaging iterations** with `rm -rf "$(./burrito_out/vzbeam_macos_silicon maintenance directory)"` (`maintenance uninstall` prompts interactively — don't script it), or bump the version — Burrito reuses a content-addressed install keyed by name/version/ERTS and will otherwise run a stale extracted sidecar.
 
 ---
 
@@ -145,15 +145,15 @@ Expected: builds `./vzbeam`; `--help` prints the usage banner (escript unaffecte
 Run:
 ```bash
 MIX_ENV=prod mix release
-./burrito_out/vzbeam --help
-./burrito_out/vzbeam ls
+./burrito_out/vzbeam_macos_silicon --help
+./burrito_out/vzbeam_macos_silicon ls
 ```
-Expected: `mix release` produces `./burrito_out/vzbeam`; `--help` prints the **full** usage banner with no truncation (proves `IO.write` flushed before `System.halt/0`); `ls` runs the real command (argv plumbed through `Burrito.Util.Args.argv()`). A VM verb like `./burrito_out/vzbeam ip base` should report the sidecar isn't found — expected until Task 4.
+Expected: `mix release` produces `./burrito_out/vzbeam_macos_silicon`; `--help` prints the **full** usage banner with no truncation (proves `IO.write` flushed before `System.halt/0`); `ls` runs the real command (argv plumbed through `Burrito.Util.Args.argv()`). A VM verb like `./burrito_out/vzbeam_macos_silicon ip base` should report the sidecar isn't found — expected until Task 4.
 
 Cold-start (record numbers, no hard SLA):
 ```bash
-time ./burrito_out/vzbeam ls   # first run extracts (slow, one-time)
-time ./burrito_out/vzbeam ls   # steady state
+time ./burrito_out/vzbeam_macos_silicon ls   # first run extracts (slow, one-time)
+time ./burrito_out/vzbeam_macos_silicon ls   # steady state
 time ./vzbeam ls               # escript baseline
 ```
 Expected: first run noticeably slower (extraction); steady-state comparable to the escript (both pay BEAM boot).
@@ -553,22 +553,22 @@ Run:
 rm -rf burrito_out
 MIX_ENV=prod mix release
 ```
-Expected: the `burrito: staged signed vz -> .../lib/vzbeam-0.1.0/priv/vz (sha256=<HASH>)` line appears; `./burrito_out/vzbeam` is produced. **Record `<HASH>`** for Step 8.
+Expected: the `burrito: staged signed vz -> .../lib/vzbeam-0.1.0/priv/vz (sha256=<HASH>)` line appears; `./burrito_out/vzbeam_macos_silicon` is produced. **Record `<HASH>`** for Step 8.
 
 - [ ] **Step 7: Force a clean extraction noninteractively, with a hermetic home**
 
 ```bash
 export VZBEAM_HOME=$(mktemp -d)   # empty home -> no $VZBEAM_HOME/bin/vz to shadow the bundle
 unset VZBEAM_VZ                   # no explicit override
-rm -rf "$(./burrito_out/vzbeam maintenance directory)"   # noninteractive clean — `maintenance uninstall` PROMPTS
-./burrito_out/vzbeam ls           # triggers a fresh extraction
+rm -rf "$(./burrito_out/vzbeam_macos_silicon maintenance directory)"   # noninteractive clean — `maintenance uninstall` PROMPTS
+./burrito_out/vzbeam_macos_silicon ls           # triggers a fresh extraction
 ```
 Expected: `ls` runs; the install dir is freshly unpacked. (`maintenance directory` only prints the path. With `VZBEAM_VZ` unset, an empty `VZBEAM_HOME`, and no `vz` on `$PATH`, the bundled `priv/vz` is the only candidate `locate/0` can resolve — so selection is established by construction here; the live `locate/0` + `VZBEAM_DEBUG` line is exercised for real on hardware in Task 6.)
 
 - [ ] **Step 8: Prove the extracted sidecar is intact — executable, runs, byte-identical, entitled**
 
 ```bash
-DIR=$(./burrito_out/vzbeam maintenance directory)
+DIR=$(./burrito_out/vzbeam_macos_silicon maintenance directory)
 VZ="$DIR"/lib/vzbeam-0.1.0/priv/vz
 test -x "$VZ" && echo "exec bit OK" || echo "EXEC BIT DROPPED"
 "$VZ" --version                               # protocol handshake; no entitlement needed to run
@@ -613,8 +613,8 @@ Resolves the wrapper-signing/quarantine questions with evidence, then writes the
 
 Run:
 ```bash
-codesign -dv ./burrito_out/vzbeam 2>&1 | grep -E "Signature|flags" || echo "UNSIGNED"
-./burrito_out/vzbeam --help >/dev/null && echo "wrapper runs"
+codesign -dv ./burrito_out/vzbeam_macos_silicon 2>&1 | grep -E "Signature|flags" || echo "UNSIGNED"
+./burrito_out/vzbeam_macos_silicon --help >/dev/null && echo "wrapper runs"
 ```
 Expected: the wrapper runs (it already did in Task 1). Note whether Zig left an ad-hoc signature. If it runs and is signed → no wrapper-signing code needed.
 
@@ -622,9 +622,9 @@ Expected: the wrapper runs (it already did in Task 1). Note whether Zig left an 
 
 Run:
 ```bash
-xattr -p com.apple.quarantine ./burrito_out/vzbeam 2>&1 || echo "no quarantine (expected for a local build)"
+xattr -p com.apple.quarantine ./burrito_out/vzbeam_macos_silicon 2>&1 || echo "no quarantine (expected for a local build)"
 # Simulate a quarantined download and check whether the EXTRACTED sidecar inherits it:
-cp ./burrito_out/vzbeam /tmp/vzbeam-q && xattr -w com.apple.quarantine "0081;0;test;" /tmp/vzbeam-q
+cp ./burrito_out/vzbeam_macos_silicon /tmp/vzbeam-q && xattr -w com.apple.quarantine "0081;0;test;" /tmp/vzbeam-q
 export VZBEAM_HOME=$(mktemp -d)
 rm -rf "$(/tmp/vzbeam-q maintenance directory)"   # noninteractive clean (NOT `maintenance uninstall`)
 /tmp/vzbeam-q ls >/dev/null 2>&1 || true
@@ -637,9 +637,9 @@ Expected (record actual): a locally-built binary has **no** quarantine. Document
 
 - **Wrapper signature:** if Step 1 shows `UNSIGNED` or the binary won't run, ad-hoc-sign the produced wrapper and re-verify:
   ```bash
-  codesign --force --sign - ./burrito_out/vzbeam
-  codesign -dv ./burrito_out/vzbeam 2>&1 | grep -i signature
-  ./burrito_out/vzbeam --help >/dev/null && echo "runs after signing"
+  codesign --force --sign - ./burrito_out/vzbeam_macos_silicon
+  codesign -dv ./burrito_out/vzbeam_macos_silicon 2>&1 | grep -i signature
+  ./burrito_out/vzbeam_macos_silicon --help >/dev/null && echo "runs after signing"
   ```
   If `codesign` refuses because of the appended payload (`file too large` / `data after end of file`), post-`wrap` re-signing isn't viable — record that and rely on the no-quarantine scp channel (the binary already ran in Task 1, so its link-time signature suffices locally). Promote to a pipelined `build:[post:]` Step only if HW (Task 6) proves Gatekeeper blocks it.
 - **Quarantine:** if Step 2 shows the extracted `vz` inherits quarantine → the README `xattr -dr` instruction (Step 4) is the documented fix; do **not** add programmatic xattr-stripping unless Task 6 proves it necessary (YAGNI).
@@ -659,8 +659,8 @@ needed on the target. The ad-hoc-signed `vz` sidecar rides inside the binary's p
 Requires Zig 0.15.2 (pinned in `mise.toml`) and the Swift toolchain on the **build** Mac:
 
 ```sh
-MIX_ENV=prod mix release         # -> ./burrito_out/vzbeam  (carries the signed vz)
-scp ./burrito_out/vzbeam user@mac:/usr/local/bin/vzbeam
+MIX_ENV=prod mix release         # -> ./burrito_out/vzbeam_macos_silicon  (carries the signed vz)
+scp ./burrito_out/vzbeam_macos_silicon user@mac:/usr/local/bin/vzbeam
 ```
 
 `scp`/`rsync`/`tar`/`git` **normally** add no `com.apple.quarantine` xattr, so the ad-hoc-signed
@@ -719,7 +719,7 @@ git commit -m "docs(burrito): packaging README + quarantine/signing decision; ig
 - [ ] **Step 1: Ship the binary to the Mac**
 
 ```bash
-scp ./burrito_out/vzbeam dj_goku@10.5.0.48:~/vzbeam
+scp ./burrito_out/vzbeam_macos_silicon dj_goku@10.5.0.48:~/vzbeam
 ssh dj_goku@10.5.0.48 'xattr -p com.apple.quarantine ~/vzbeam || echo "no quarantine"'
 ```
 Expected: no quarantine over scp; the binary is present.

@@ -43,6 +43,38 @@ sidecar with the `com.apple.security.virtualization` entitlement on every build.
 `$VZBEAM_HOME` (default `~/.local/share/vzbeam`) — relocate it (e.g. to an external SSD) with that one
 env var.
 
+## Packaging a single-file binary (Burrito)
+
+Produce one self-contained `vzbeam` for Apple-Silicon macOS (≥ 13) — no Elixir/Erlang/Swift
+needed on the target. The ad-hoc-signed `vz` sidecar rides inside the binary's payload.
+
+Requires Zig 0.15.2 (pinned in `mise.toml`), the Swift toolchain, and `xz` (`brew install xz`)
+on the **build** Mac:
+
+```sh
+MIX_ENV=prod mix release         # -> ./burrito_out/vzbeam_macos_silicon  (carries the signed vz)
+scp ./burrito_out/vzbeam_macos_silicon user@mac:/usr/local/bin/vzbeam
+```
+
+`scp`/`rsync`/`tar`/`git` **normally** add no `com.apple.quarantine` xattr, so the ad-hoc-signed
+binary runs as-is. Verify on the target before first run:
+
+```sh
+xattr -p com.apple.quarantine ./vzbeam    # no output = not quarantined, good
+```
+
+If it IS quarantined (browser/AirDrop download), clear it once:
+
+```sh
+xattr -dr com.apple.quarantine ./vzbeam
+```
+
+`VZBEAM_DEBUG=1 vzbeam <cmd>` prints which `vz` sidecar was selected. The bundled sidecar is
+overridable by `$VZBEAM_VZ` or a `mix vz.build` install in `$VZBEAM_HOME/bin/vz`.
+
+> **macOS 26 (Tahoe) note:** Zig 0.15.2's linker fails against the macOS 26 SDK; point Zig at the
+> macOS 15 SDK until Burrito ships a Tahoe-compatible Zig.
+
 ## First boot (one-time per base)
 
 A freshly restored base is unconfigured, so the **first** `run` must be `--gui` to complete macOS

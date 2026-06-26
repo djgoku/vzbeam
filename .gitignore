@@ -21,6 +21,9 @@ erl_crash.dump
 # macOS
 .DS_Store
 
+# Burrito release output
+/burrito_out/
+
 # Session handoff prompts (scratch, not project content)
 /plan-*-prompt.md
 /prompt.md
