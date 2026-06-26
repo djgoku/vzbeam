@@ -98,6 +98,8 @@ defmodule VzBeam.Cache do
     with :ok <- File.rename(pending, final),
          {:ok, entry} <- put_index(info, final) do
       {:ok, :fetched, entry}
+    else
+      err -> File.rm(pending); err
     end
   end
 
