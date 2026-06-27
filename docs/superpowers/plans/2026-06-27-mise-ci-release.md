@@ -167,6 +167,18 @@ git commit -m "feat(ci): add mise checksum task (vzbeam + SHA256SUMS, relative)"
 
 ## Task 4: `release` task (script) + unit test
 
+> **POST-REVIEW HARDENING (supersedes the script/test code blocks below).** A final
+> adversarial review flagged two HIGH issues in the release-object-keyed design originally
+> shown here: (1) a *deleted* release could be recreated from a newer commit, and (2) a
+> transient asset-query error could be misread as "partial" and trigger a destructive
+> `gh release upload --clobber`. The release task was therefore redesigned to be
+> **tag-keyed and fail-closed** (idempotency keyed on the immutable git tag `v<version>`;
+> uncertain/partial/deleted/draft/API-error states **abort** for a human; `--clobber`
+> removed entirely). The authoritative design is the **"`mise run release` control flow
+> (tag-keyed, fail-closed)"** section of the spec, and the implementations are the committed
+> `mise-tasks/release` + `test/ci/release_test.sh` (the test grew to 11 scenarios / 41
+> assertions). The code blocks below are retained as the original design record.
+
 **Files:**
 - Create: `test/ci/release_test.sh`
 - Create: `mise-tasks/release`

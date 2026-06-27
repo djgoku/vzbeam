@@ -34,7 +34,7 @@ tasks) that:
 | # | Decision |
 |---|----------|
 | 1 | **Runner:** everything (test + build) on a macOS Apple-Silicon runner. Spike on `macos-26`; fall back to `macos-15` (one-line `runs-on:` change) if the documented Tahoe Zig failure (`undefined symbol: _malloc_size`) bites. The **bare** labels `macos-26` / `macos-15` are arm64 (validated KB fact, 2026-06-13; `-large`/`-intel` variants are x64 — do **not** use those). A `uname -m` = `arm64` assertion runs before the build as cheap insurance against image drift, since a silent x86_64 build would yield a non-functional artifact with no error. |
-| 2 | **Versioning (release trigger):** the version in `mix.exs` drives the tag `v<version>`. On merge to `main`, release only if a **complete GitHub Release** for `v<version>` does not already exist (idempotent — keyed on the release object + both assets, not bare tag existence; see control flow). Shipping = bumping `mix.exs`. |
+| 2 | **Versioning (release trigger):** the version in `mix.exs` drives the tag `v<version>`. On merge to `main`, release only if the git tag `v<version>` does **not** already exist (idempotent, **tag-keyed**; a version ships exactly once). Uncertain/partial state fails closed for a human — see control flow. Shipping = bumping `mix.exs`. |
 | 3 | **Checksums:** a `SHA256SUMS` file (`<sha256>  vzbeam`), verifiable with `shasum -a 256 -c SHA256SUMS`, uploaded to the release alongside the binary. |
 | 4 | **Layout:** fat mise tasks, thin YAML. All logic in `mise.toml [tasks]`; YAML checks out, sets up mise, calls tasks. **Publish gate (defense-in-depth):** the precise gate is the `release` **job-level** `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`; the mise task additionally guards the tag/publish block on `$GITHUB_ACTIONS` being non-empty (GHA-specific, narrower than `$CI`) so a local `mise run release` builds + checksums but can never publish. |
 | 5 | **Published asset name:** Burrito build output stays `burrito_out/vzbeam_macos_silicon` (README + validated build path untouched). The `checksum` task copies it to `burrito_out/vzbeam`; the checksum entry and the published release asset are `vzbeam`. (Trade-off: a bare `vzbeam` name has no platform suffix — fine while the project is Apple-Silicon-macOS-only; re-add the suffix if a second target is ever added.) |
@@ -59,43 +59,50 @@ absent; publish fails loudly if `vzbeam` / `SHA256SUMS` are absent.
 `build` runs `mix deps.get` itself (Codex #1): the `release` job is a fresh runner with
 no workspace shared from the `test` job, and `mix release` does **not** fetch deps.
 
-### `mise run release` control flow (idempotent)
+### `mise run release` control flow (tag-keyed, fail-closed)
+
+**Idempotency key = the immutable git tag `v<version>`.** A version ships exactly once;
+deleting a release never resurrects it from a newer commit. The script **never** clobbers
+or rebuilds onto an existing tag — if state is uncertain, it **fails closed** (aborts for a
+human) rather than risk publishing a binary that doesn't match the tagged commit. (This
+reconciles the two review rounds: the earlier "release object, not bare tag" change was
+motivated by a tag-without-release split-brain, but `gh release create` now creates the tag
++ release in one atomic step — see below — so the tag is once again a safe, stable key.)
 
 1. `VERSION=$(mix eval 'IO.puts(Mix.Project.config()[:version])')`; `TAG=v$VERSION`.
-2. **Completeness check (Codex #2 — idempotent on the *release object*, not the bare
-   tag).** In GHA only: if `gh release view "$TAG"` shows a **published, non-draft**
-   release that already has **both** assets (`vzbeam` and `SHA256SUMS`) → log "already
-   released, skipping" and exit 0. This is the no-op path for merges that didn't bump the
-   version. Gating on the release object (not tag existence) avoids the split-brain where
-   a tag was pushed but the release/assets never landed — that previously skipped all
-   reruns forever. **Draft handling:** this workflow never creates drafts, so a *draft*
-   release at `$TAG` is an anomaly (manual/external) — **fail loudly** rather than treat
-   it as "already released" or silently overwrite it.
-3. Run `build` then `checksum` → produces `burrito_out/vzbeam` + `burrito_out/SHA256SUMS`.
-4. **Publish — GHA only** (`$GITHUB_ACTIONS` non-empty; the job-level `if` already
-   restricts this to push-to-main):
-   - If the release does **not** exist: `gh release create "$TAG" --target "$GITHUB_SHA"
-     --latest --notes "..." burrito_out/vzbeam burrito_out/SHA256SUMS`. `gh release
-     create` **creates the tag itself** at `--target`, so there is no separate
-     `git tag && git push` step and therefore no tag-without-release window. `--latest`
-     is set **explicitly** (omitting it can *steal* the Latest marker — validated KB).
-     If a **bare git tag** already exists for `$TAG` without a release, `gh release create`
-     **adopts** that existing tag and creates the release on it (validated KB) — so this
-     path self-heals an orphan tag.
-   - If the release exists but is missing assets (partial prior run): recover with
-     `gh release upload "$TAG" --clobber burrito_out/vzbeam burrito_out/SHA256SUMS`.
-   - **Create-race (Codex):** the no-release check (step 2) and the create are not atomic,
-     so two concurrent runs could both reach `create`. `gh release create` on an existing
-     release **exits non-zero** (validated KB), so treat that specific failure as "lost the
-     race" and fall through to the `upload --clobber` recovery rather than failing the job.
-     The release-job concurrency group (below) makes this race rare; this is the belt.
-   - If not in GHA (local run): stop after step 3 with "built, not publishing (not in
-     GitHub Actions)".
+2. **Local short-circuit:** if not in GHA (`$GITHUB_ACTIONS` empty), run `build` + `checksum`
+   and stop with "built, not publishing (not in GitHub Actions)". No `gh`, no network.
+3. **Tag state** (GHA) via `gh api "repos/{owner}/{repo}/git/ref/tags/$TAG"` (gh fills
+   `{owner}/{repo}` from the checkout):
+   - HTTP 404 / "Not Found" → **absent**.
+   - success → **present**.
+   - any other error (auth/network/5xx) → **unknown → ABORT** (fail closed).
+4. **If tag present** — the version already shipped. Inspect the release **object** to decide
+   skip vs. fail (never rebuild/clobber):
+   - release exists, non-draft, has **both** assets (`vzbeam` + `SHA256SUMS`) → "already
+     released — skipping", exit 0. *(common no-op path for merges that didn't bump.)*
+   - release is a **draft** → ABORT (anomaly; this workflow never drafts).
+   - release **missing/incomplete** (deleted, or assets absent) → ABORT with guidance:
+     the tag is fixed but the artifact would be rebuilt from the *current* commit, which may
+     differ from the tagged commit — resolve manually.
+   - the release query **errors** (not a clean "not found") → **unknown → ABORT** (fail
+     closed; this is the Codex-#2 fix — an asset-read blip must never be read as "partial"
+     and trigger a clobber).
+5. **If tag absent** — a new version to ship:
+   - run `build` + `checksum` → `burrito_out/vzbeam` + `burrito_out/SHA256SUMS`.
+   - `gh release create "$TAG" --target "$GITHUB_SHA" --latest --title "$TAG"
+     --notes "..." burrito_out/vzbeam burrito_out/SHA256SUMS`. One atomic call creates the
+     **tag + release + assets** at the pushed commit; `--latest` is explicit (omitting it can
+     *steal* the Latest marker — validated KB). No separate `git tag`/`git push`.
+   - **Create-race:** if `gh release create` fails (another run tagged it first, or a
+     transient error), re-inspect: if a **complete** release now exists → "created
+     concurrently — ok", exit 0; otherwise **ABORT** (fail closed — never `--clobber`).
 
-Because `gh release create` owns tag creation, the shallow-checkout `git` tag-fetch
-concern is moot for *creation*; the completeness check uses `gh release view` (the API),
-not local refs. `actions/checkout` still uses `fetch-depth: 0` so `mix`/version tooling
-and any future tag inspection have full history.
+There is **no `gh release upload --clobber`** anywhere: clobbering is the operation that
+made a transient read-error destructive, so it is removed in favor of fail-closed aborts.
+The per-job `release-${{ github.ref }}` concurrency group (below) makes the create-race rare;
+the abort is the belt. `actions/checkout` uses `fetch-depth: 0` so version tooling has full
+history, though tag state is read from the API, not local refs.
 
 ### GitHub Actions workflow
 
@@ -188,11 +195,13 @@ main pushes serialize through the publish rather than racing on `gh release crea
   (precise) + `$GITHUB_ACTIONS` guard inside the task (local-accident belt). A local
   `mise run release` builds + checksums but never publishes.
 - `release` `needs: [test]` — no publish on a red suite.
-- **Idempotent on the release object** — the completeness check (`gh release view "$TAG"`
-  with both assets present) makes a re-run, a no-bump merge, or recovery from a partial
-  prior run all safe. `gh release create` owns tag creation, so there is no
-  tag-without-release split-brain; a partial run is repaired via `gh release upload
-  --clobber`.
+- **Tag-keyed, fail-closed idempotency** — the immutable git tag `v<version>` is the key:
+  tag present + complete release → skip; tag absent → create (atomic tag+release+assets via
+  `gh release create`). Any uncertain state (API error reading tag or release, deleted/
+  incomplete release on an existing tag, create-race) **aborts for a human** rather than
+  rebuilding or clobbering. No `gh release upload --clobber` exists — removing it closes the
+  two Codex-flagged hazards (a deleted release can't be recreated from a newer commit; a
+  transient asset-read error can't overwrite good assets).
 - **arm64 assertion** before build — a silent x86_64 build can't slip through.
 - `mise.lock` pins all tools so the toolchain is reproducible; install runs **with**
   `--locked` (spike-validated 2026-06-27 — erlang/elixir/zig all carry precompiled
