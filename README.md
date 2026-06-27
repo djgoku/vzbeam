@@ -10,9 +10,9 @@ vzbeam is split into two pieces:
 - a **minimal Swift sidecar** (`vz`) — the only component that links Virtualization.framework;
 - an **Elixir CLI engine** — all orchestration: filesystem, config, lifecycle, SSH, lease parsing.
 
-## Status
+## Commands
 
-**Plans 1–4 implemented** — the full CLI plus the Swift `vz` sidecar:
+The full CLI, backed by the Swift `vz` sidecar:
 
 - `ls` / `ip` / `images` — inspect bundles, IPs, cached restore images
 - `fetch <spec>` — download + cache a restore image
@@ -31,12 +31,6 @@ An image `<spec>` (for `fetch` and `new --image`) is one of:
   from the cache, no download
 
 All four resolve to a cached image keyed by its build, so the disk is never duplicated.
-
-The engine has **159 green tests**. On bare-metal Apple Silicon (a release macOS), the boot-dependent
-paths are hardware-validated: restore, boot + `--gui`, CoW clone, headless networking + `ssh`, virtiofs
-`--share`, `kill`, and the 2-VM cap (both the engine pre-check and the framework's authoritative
-`VZError 6`) — and the packaged single-file binary boots a guest from its **bundled** sidecar. See the
-hardware-suite results in `docs/superpowers/results/`.
 
 ## Build, test, run
 
@@ -135,12 +129,15 @@ guest and needs none of this.)
 
 ## A note on validation
 
-`mix test` validates the **entire Elixir engine** and is the validation entry point for everything
+`mix test` runs the engine's **159 tests** and is the validation entry point for everything
 implemented so far. It does **not** — and cannot — validate the VM-booting paths (`install` / `run`):
 Apple's Virtualization.framework does not support running a macOS guest inside a macOS guest, so a
 *virtualized* dev box can't boot guests at all. Those paths are validated on **bare-metal Apple
-Silicon** via a separate, hardware-gated suite — see the design spec §13 / §15. A green `mix test`
-means the engine is sound, not that the VM lifecycle has been exercised.
+Silicon** via a separate, hardware-gated suite: restore, boot + `--gui`, CoW clone, headless
+networking + `ssh`, virtiofs `--share`, `kill`, the 2-VM cap (the engine pre-check and the framework's
+authoritative `VZError 6`), and the packaged single-file binary booting a guest from its **bundled**
+sidecar. See the design spec §13 / §15 and the hardware-suite results in `docs/superpowers/results/`.
+A green `mix test` means the engine is sound, not that the VM lifecycle has been exercised.
 
 ## Docs
 
