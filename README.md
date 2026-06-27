@@ -1,10 +1,11 @@
 # vzbeam
 
-Throwaway **macOS** virtual machines on Apple Silicon, built directly on Apple's
-**Virtualization.framework** — no third-party VM runtime (Tart/Lima/UTM) and no paid Apple Developer
-account (ad-hoc codesign + a single entitlement).
+Clean, disposable **macOS** VMs on Apple Silicon for testing, CI, and sandboxing. Restore an
+image, clone it instantly (copy-on-write), run it GUI or headless, SSH in, then tear it down —
+all on Apple's **Virtualization.framework**, with no third-party runtime and no paid Apple
+Developer account.
 
-A clean-room rewrite of `sbx`, split into two pieces:
+vzbeam is split into two pieces:
 
 - a **minimal Swift sidecar** (`vz`) — the only component that links Virtualization.framework;
 - an **Elixir CLI engine** — all orchestration: filesystem, config, lifecycle, SSH, lease parsing.
@@ -92,6 +93,21 @@ overridable by `$VZBEAM_VZ` or a `mix vz.build` install in `$VZBEAM_HOME/bin/vz`
 > here. Until Burrito ships a Tahoe-compatible Zig, either build on macOS ≤ 15, or shadow `xcrun`
 > earlier on `PATH` with a wrapper that points `--show-sdk-path` at
 > `/Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk` (the macOS 15 SDK, installed alongside 26).
+
+## Install a prebuilt `vzbeam` via mise/aqua
+
+Rather than build, install a released binary straight from GitHub Releases with mise — point
+it at this repo's single-file aqua registry (`aqua/registry.yaml`):
+
+```sh
+MISE_AQUA_REGISTRIES=https://raw.githubusercontent.com/djgoku/vzbeam/main/aqua/registry.yaml \
+  mise install aqua:djgoku/vzbeam@latest        # or @0.1.0 for a specific release
+```
+
+mise verifies the download against the GitHub asset digest and installs it under its data dir
+(`mise which aqua:djgoku/vzbeam` prints the path; `mise use aqua:djgoku/vzbeam@latest` adds it
+to a project). The install is quarantine-free, so the ad-hoc-signed binary runs as-is.
+Apple-Silicon macOS only, and it needs a published release to install from.
 
 ## First boot (one-time per base)
 
