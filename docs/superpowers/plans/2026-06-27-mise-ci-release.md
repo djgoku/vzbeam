@@ -126,15 +126,15 @@ Append:
 [tasks.checksum]
 description = "Copy the Burrito output to 'vzbeam' and write SHA256SUMS (relative paths)"
 run = """
+test -f burrito_out/vzbeam_macos_silicon || { echo "checksum: missing burrito_out/vzbeam_macos_silicon (run 'mise run build' first)" >&2; exit 1; }
 cd burrito_out
-test -f vzbeam_macos_silicon || { echo "checksum: missing burrito_out/vzbeam_macos_silicon (run 'mise run build' first)" >&2; exit 1; }
 cp vzbeam_macos_silicon vzbeam
 shasum -a 256 vzbeam > SHA256SUMS
 shasum -a 256 -c SHA256SUMS
 """
 ```
 
-`cd burrito_out` keeps the path in `SHA256SUMS` relative (`vzbeam`, not `burrito_out/vzbeam`) so `shasum -a 256 -c SHA256SUMS` works after a user downloads both files into one directory.
+The guard runs **before** `cd burrito_out` (checking the prefixed path) — otherwise, when `burrito_out/` doesn't exist, the `cd` fails first and the custom error message never prints. Then `cd burrito_out` keeps the path in `SHA256SUMS` relative (`vzbeam`, not `burrito_out/vzbeam`) so `shasum -a 256 -c SHA256SUMS` works after a user downloads both files into one directory.
 
 - [ ] **Step 2: Test the guard — run with no artifact (expect clean failure)**
 
