@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# mise task: build, checksum, and (only in GitHub Actions) publish a GitHub Release.
+# Idempotent on the release OBJECT (not the bare tag). Local-safe: without
+# $GITHUB_ACTIONS it builds + checksums but never tags or publishes.
+#MISE description="Build, checksum, and publish a GitHub Release on a version bump"
+set -euo pipefail
+
+VERSION="$(mix eval 'IO.puts(Mix.Project.config()[:version])')"
+TAG="v${VERSION}"
+echo "release: version=${VERSION} tag=${TAG}"
+
+in_ci() { [ -n "${GITHUB_ACTIONS:-}" ]; }
+
+# Echoes one of: absent | draft | partial | complete
+release_state() {
+  local draft names
+  if ! draft="$(gh release view "${TAG}" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
+    echo absent; return
+  fi
+  if [ "${draft}" = "true" ]; then
+    echo draft; return
+  fi
+  names="$(gh release view "${TAG}" --json assets --jq '.assets[].name' 2>/dev/null || true)"
+  if grep -qx 'vzbeam' <<<"${names}" && grep -qx 'SHA256SUMS' <<<"${names}"; then
+    echo complete
+  else
+    echo partial
+  fi
+}
+
+# 1. Completeness check (CI only) — skip if already fully published.
+if in_ci; then
+  case "$(release_state)" in
+    complete)
+      echo "release: ${TAG} already published with both assets — skipping"
+      exit 0 ;;
+    draft)
+      echo "release: ERROR ${TAG} exists as a DRAFT (anomaly, not created by this workflow) — refusing" >&2
+      exit 1 ;;
+    partial)
+      echo "release: ${TAG} exists but assets incomplete — will recover after build" ;;
+    absent)
+      echo "release: no existing release for ${TAG} — will create" ;;
+  esac
+fi
+
+# 2. Build + checksum (local-safe).
+mise run build
+mise run checksum
+
+ASSETS=(burrito_out/vzbeam burrito_out/SHA256SUMS)
+
+# 3. Publish (CI only).
+if ! in_ci; then
+  echo "release: built + checksummed; not in GitHub Actions — not publishing"
+  exit 0
+fi
+
+case "$(release_state)" in
+  complete)
+    echo "release: ${TAG} became complete concurrently — nothing to upload" ;;
+  partial)
+    echo "release: uploading assets to existing ${TAG} (recovery)"
+    gh release upload "${TAG}" --clobber "${ASSETS[@]}" ;;
+  absent)
+    echo "release: creating ${TAG}"
+    if ! gh release create "${TAG}" --target "${GITHUB_SHA}" --latest \
+          --title "${TAG}" --notes "Automated release ${TAG}" "${ASSETS[@]}"; then
+      echo "release: create failed (lost create-race?) — recovering via upload"
+      gh release upload "${TAG}" --clobber "${ASSETS[@]}"
+    fi ;;
+  draft)
+    echo "release: ERROR ${TAG} is a draft — refusing" >&2
+    exit 1 ;;
+esac
+echo "release: done ${TAG}"
