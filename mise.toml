@@ -2,3 +2,12 @@
 "conda:xz-tools" = "latest"
 zig = "0.15.2"
 "conda:7zip" = "latest"
+elixir = "1.20.0-otp-29"
+erlang = "29"
+
+[tasks.ci]
+description = "Install deps and run the test suite"
+run = """
+mix deps.get
+mix test
+"""
