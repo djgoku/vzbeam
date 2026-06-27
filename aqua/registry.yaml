@@ -1,0 +1,19 @@
+# Single-file aqua registry for installing the released vzbeam binary via mise/aqua.
+#
+# Usage (point mise at this file, then install the package):
+#   MISE_AQUA_REGISTRIES=https://raw.githubusercontent.com/djgoku/vzbeam/main/aqua/registry.yaml \
+#     mise install aqua:djgoku/vzbeam@latest
+#
+# The release asset `vzbeam` is a raw, ad-hoc-codesigned arm64 macOS binary. mise verifies
+# it against the GitHub asset digest, copies it into place, and marks it executable. aqua/mise
+# installs are quarantine-free, so the ad-hoc signature is sufficient to launch it.
+packages:
+  - type: github_release
+    repo_owner: djgoku
+    repo_name: vzbeam
+    asset: vzbeam
+    format: raw
+    supported_envs:
+      - darwin/arm64
+    files:
+      - name: vzbeam

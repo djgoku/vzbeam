@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# mise task: build, checksum, and (only in GitHub Actions) publish a GitHub Release.
+#MISE description="Build, checksum, and publish a GitHub Release on a version bump"
+set -euo pipefail
+
+VERSION="$(mix eval 'IO.puts(Mix.Project.config()[:version])')"
+TAG="v${VERSION}"
+echo "release: version=${VERSION} tag=${TAG}"
+
+in_ci() { [ -n "${GITHUB_ACTIONS:-}" ]; }
+
+abort() {
+  echo "release: ABORT — $*" >&2
+  exit 1
+}
+
+# Match only the specific "not found" strings gh actually emits — `gh api` 404s
+# carry "HTTP 404"; `gh release view` on a missing release prints "release not found".
+# Kept tight (no generic "Not Found", no -i) so a non-404 error is never misread as
+# absent: any miss falls through to a fail-closed abort.
+is_not_found() {
+  grep -Eq 'HTTP 404|release not found' <<<"$1"
+}
+
+release_state() {
+  local draft
+  local rc
+  local names
+
+  draft="$(gh release view "${TAG}" --json isDraft --jq '.isDraft' 2>&1)" && rc=0 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if is_not_found "$draft"; then
+      echo absent
+    else
+      echo unknown
+    fi
+    return
+  fi
+
+  if [ "$draft" = "true" ]; then
+    echo draft
+    return
+  fi
+
+  names="$(gh release view "${TAG}" --json assets --jq '.assets[].name' 2>&1)" && rc=0 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo unknown
+    return
+  fi
+
+  if grep -Fxq 'vzbeam' <<<"$names" && grep -Fxq 'SHA256SUMS' <<<"$names"; then
+    echo complete
+  else
+    echo partial
+  fi
+}
+
+if ! in_ci; then
+  mise run build
+  mise run checksum
+  echo "release: built + checksummed; not publishing (not in GitHub Actions)"
+  exit 0
+fi
+
+tag_output="$(gh api "repos/{owner}/{repo}/git/ref/tags/${TAG}" 2>&1)" && tag_rc=0 || tag_rc=$?
+if [ "$tag_rc" -eq 0 ]; then
+  tag_state=present
+elif is_not_found "$tag_output"; then
+  tag_state=absent
+else
+  abort "could not determine whether tag ${TAG} exists: ${tag_output}"
+fi
+
+if [ "$tag_state" = "present" ]; then
+  state="$(release_state)"
+  case "$state" in
+    complete)
+      echo "release: ${TAG} already released — skipping"
+      exit 0
+      ;;
+    draft)
+      abort "${TAG} exists as a draft release; this workflow never drafts releases — resolve manually"
+      ;;
+    partial | absent)
+      abort "${TAG} tag exists, but the artifact would be rebuilt from the current commit which may differ from the tagged commit — resolve manually"
+      ;;
+    unknown)
+      abort "could not determine release state for existing tag ${TAG} — resolve manually"
+      ;;
+  esac
+fi
+
+mise run build
+mise run checksum
+
+if gh release create "${TAG}" --target "${GITHUB_SHA}" --latest \
+  --title "${TAG}" --notes "Automated release ${TAG}" \
+  burrito_out/vzbeam burrito_out/SHA256SUMS; then
+  echo "release: created ${TAG}"
+  exit 0
+fi
+
+state="$(release_state)"
+if [ "$state" = "complete" ]; then
+  echo "release: ${TAG} created concurrently — ok"
+  exit 0
+fi
+
+abort "failed to create ${TAG}; release state after retry is ${state}"

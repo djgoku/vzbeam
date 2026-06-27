@@ -18,6 +18,9 @@ erl_crash.dump
 # Claude Code agent scratch (worktrees, local state)
 /.claude/
 
+# Codex agent scratch (local state)
+/.codex/
+
 # macOS
 .DS_Store
 

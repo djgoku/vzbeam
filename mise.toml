@@ -2,3 +2,29 @@
 "conda:xz-tools" = "latest"
 zig = "0.15.2"
 "conda:7zip" = "latest"
+elixir = "1.20.0-otp-29"
+erlang = "29"
+
+[tasks.ci]
+description = "Install deps and run the test suite"
+run = """
+mix deps.get
+mix test
+"""
+
+[tasks.build]
+description = "Build the Burrito single-file release (carries the signed vz sidecar)"
+run = """
+mix deps.get
+MIX_ENV=prod mix release --overwrite
+"""
+
+[tasks.checksum]
+description = "Copy the Burrito output to 'vzbeam' and write SHA256SUMS (relative paths)"
+run = """
+test -f burrito_out/vzbeam_macos_silicon || { echo "checksum: missing burrito_out/vzbeam_macos_silicon (run 'mise run build' first)" >&2; exit 1; }
+cd burrito_out
+cp vzbeam_macos_silicon vzbeam
+shasum -a 256 vzbeam > SHA256SUMS
+shasum -a 256 -c SHA256SUMS
+"""
