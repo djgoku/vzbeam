@@ -11,3 +11,10 @@ run = """
 mix deps.get
 mix test
 """
+
+[tasks.build]
+description = "Build the Burrito single-file release (carries the signed vz sidecar)"
+run = """
+mix deps.get
+MIX_ENV=prod mix release --overwrite
+"""
