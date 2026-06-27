@@ -3,7 +3,7 @@
 #MISE description="Build, checksum, and publish a GitHub Release on a version bump"
 set -euo pipefail
 
-VERSION="$(mix eval 'IO.puts(Mix.Project.config()[:version])')"
+VERSION="$(mise run version)"
 TAG="v${VERSION}"
 echo "release: version=${VERSION} tag=${TAG}"
 

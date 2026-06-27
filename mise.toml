@@ -5,19 +5,25 @@ zig = "0.15.2"
 elixir = "1.20.0-otp-29"
 erlang = "29"
 
+[tasks.deps]
+description = "Fetch Hex deps (also bootstraps Hex/rebar on a fresh runner)"
+run = "mix deps.get"
+
+[tasks.version]
+description = "Print the project version from mix.exs (no compile or deps required)"
+run = """
+elixir -e 'Regex.run(~r/version: "(.*)"/, File.read!("mix.exs"), capture: :all_but_first) |> List.first() |> IO.puts()'
+"""
+
 [tasks.ci]
 description = "Install deps and run the test suite"
-run = """
-mix deps.get
-mix test
-"""
+depends = ["deps"]
+run = "mix test"
 
 [tasks.build]
 description = "Build the Burrito single-file release (carries the signed vz sidecar)"
-run = """
-mix deps.get
-MIX_ENV=prod mix release --overwrite
-"""
+depends = ["deps"]
+run = "MIX_ENV=prod mix release --overwrite"
 
 [tasks.checksum]
 description = "Copy the Burrito output to 'vzbeam' and write SHA256SUMS (relative paths)"
