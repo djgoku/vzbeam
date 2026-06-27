@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # mise task: build, checksum, and (only in GitHub Actions) publish a GitHub Release.
 #MISE description="Build, checksum, and publish a GitHub Release on a version bump"
+#USAGE flag "--dry-run" help="Build + checksum on this runner but never publish (PR validation)"
 set -euo pipefail
 
 VERSION="$(mise run version)"
@@ -8,6 +9,7 @@ TAG="v${VERSION}"
 echo "release: version=${VERSION} tag=${TAG}"
 
 in_ci() { [ -n "${GITHUB_ACTIONS:-}" ]; }
+dry_run() { [ "${usage_dry_run:-false}" = "true" ]; }
 
 abort() {
   echo "release: ABORT — $*" >&2
@@ -55,10 +57,14 @@ release_state() {
   fi
 }
 
-if ! in_ci; then
+if ! in_ci || dry_run; then
   mise run build
   mise run checksum
-  echo "release: built + checksummed; not publishing (not in GitHub Actions)"
+  if dry_run; then
+    echo "release: dry-run — built + checksummed on this runner, not publishing"
+  else
+    echo "release: built + checksummed; not publishing (not in GitHub Actions)"
+  fi
   exit 0
 fi
 

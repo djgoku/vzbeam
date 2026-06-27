@@ -56,3 +56,29 @@ jobs:
           xcode-select -p
           xcrun swift --version
       - run: mise run release
+
+  # Exercises the full release path (version -> build -> checksum) on a fresh
+  # runner for every PR, stopping before publish. This is what catches release
+  # breakage before merge, since the `release` job above only runs on push to main.
+  release-dry-run:
+    needs: [test]
+    if: github.event_name == 'pull_request'
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.6.11
+      - name: Assert Apple Silicon
+        run: |
+          arch="$(uname -m)"
+          echo "runner arch: ${arch}"
+          test "${arch}" = "arm64"
+      - name: Log toolchain (Xcode/Swift)
+        run: |
+          xcode-select -p
+          xcrun swift --version
+      - run: mise run release --dry-run
