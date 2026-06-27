@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Status:** Implemented on branch `mise-ci-release` (executed via subagent-driven-development; live tracking used the session task list). The unchecked boxes below are retained as the original plan record. Note: the `release` script was hardened post-review — see the "POST-REVIEW HARDENING" note under Task 4.
+
 **Goal:** Add mise-task-driven CI that tests on PRs + main pushes and, on a `mix.exs` version bump, builds the Burrito single-file artifact, emits `SHA256SUMS`, and publishes a GitHub Release (asset name `vzbeam`).
 
-**Architecture:** Fat mise tasks, thin GitHub Actions YAML. `ci`/`build`/`checksum` are inline tasks in `mise.toml`; the more complex, branching `release` orchestration is a shellcheck-clean file task (`mise-tasks/release`) so it can be linted and unit-tested locally with mocks. One workflow with two jobs (`test`, `release`) on a macOS Apple-Silicon runner. Releasing is idempotent on the *release object* (not the bare tag) and gated to push-to-main.
+**Architecture:** Fat mise tasks, thin GitHub Actions YAML. `ci`/`build`/`checksum` are inline tasks in `mise.toml`; the more complex, branching `release` orchestration is a shellcheck-clean file task (`mise-tasks/release`) so it can be linted and unit-tested locally with mocks. One workflow with two jobs (`test`, `release`) on a macOS Apple-Silicon runner. Releasing is **tag-keyed and fail-closed** (idempotency keyed on the immutable git tag `v<version>`; uncertain/partial state aborts) and gated to push-to-main.
 
 **Tech Stack:** mise (tasks + lockfile), GitHub Actions (`jdx/mise-action`, `actions/checkout`), `gh` CLI (with built-in `--jq`), Elixir/Mix + Burrito, bash, shellcheck.
 
@@ -29,7 +31,7 @@
 
 ### Design decision to confirm
 
-The spec says "all logic in `mise.toml [tasks]`." This plan keeps the three simple tasks inline there, but puts the **`release`** logic in `mise-tasks/release` (still a mise task, still `mise run release`) so the branching publish/recovery logic — the riskiest code — can be shellcheck-linted and unit-tested. If you'd rather have `release` inline in `mise.toml` too, say so before Task 4.
+`ci`/`build`/`checksum` are inline in `mise.toml`; the branching **`release`** logic is a `mise-tasks/release` file task (still a mise task, still `mise run release`) so the riskiest code can be shellcheck-linted and unit-tested. (The spec's Decision 4 documents this split.)
 
 ---
 
@@ -589,7 +591,7 @@ Expected: `vzbeam: OK`.
 - Build Burrito artifact on version bump → Task 2 `build`, Task 4 `release`, Task 5 `release` job. ✓
 - SHA256SUMS → Task 3 `checksum`. ✓
 - Publish GitHub Release, asset `vzbeam` → Task 3 (rename) + Task 4 (publish). ✓
-- Versioning from `mix.exs`, idempotent on release object → Task 4 `release_state` + completeness check. ✓
+- Versioning from `mix.exs`, **tag-keyed** idempotency (immutable `v<version>`), fail-closed on uncertain state → Task 4b `release_state` + tag check. ✓
 - Publish gate (job `if` + `$GITHUB_ACTIONS`) → Task 4 (`in_ci`) + Task 5 (`if:`). ✓
 - arm64 assertion → Task 5. ✓
 - `--locked` via mise-action + version pin → Task 5 (`jdx/mise-action@v4` + `version:`). ✓
@@ -599,6 +601,6 @@ Expected: `vzbeam: OK`.
 
 **Placeholder scan:** No TBD/TODO; every code/step is concrete. The only `<version>` placeholders are in Task 7 manual commands where the version is chosen at runtime — intentional.
 
-**Type/name consistency:** task names `ci`/`build`/`checksum`/`release` consistent across `mise.toml`, the script, the test, and the workflow. Asset names `vzbeam`/`SHA256SUMS` consistent across `checksum`, `release`, the test mocks, and Task 7. `release_state` values (`absent`/`draft`/`partial`/`complete`) handled in both the completeness check and the publish switch.
+**Type/name consistency:** task names `ci`/`build`/`checksum`/`release` consistent across `mise.toml`, the script, the test, and the workflow. Asset names `vzbeam`/`SHA256SUMS` consistent across `checksum`, `release`, the test mocks, and Task 7. `release_state` values (`absent`/`draft`/`partial`/`complete`/`unknown`) handled in both the tag-present check and the create-race re-check (post-hardening).
 
 **Scope:** single subsystem (CI/release). No decomposition needed.

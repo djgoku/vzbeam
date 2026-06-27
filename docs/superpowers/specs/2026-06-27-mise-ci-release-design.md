@@ -1,7 +1,7 @@
 # mise CI + release design
 
 **Date:** 2026-06-27
-**Status:** Approved (design); pending implementation plan
+**Status:** Implemented on branch `mise-ci-release` (design → plan → executed; see `docs/superpowers/plans/2026-06-27-mise-ci-release.md`)
 
 ## Goal
 
@@ -36,7 +36,7 @@ tasks) that:
 | 1 | **Runner:** everything (test + build) on a macOS Apple-Silicon runner. Spike on `macos-26`; fall back to `macos-15` (one-line `runs-on:` change) if the documented Tahoe Zig failure (`undefined symbol: _malloc_size`) bites. The **bare** labels `macos-26` / `macos-15` are arm64 (validated KB fact, 2026-06-13; `-large`/`-intel` variants are x64 — do **not** use those). A `uname -m` = `arm64` assertion runs before the build as cheap insurance against image drift, since a silent x86_64 build would yield a non-functional artifact with no error. |
 | 2 | **Versioning (release trigger):** the version in `mix.exs` drives the tag `v<version>`. On merge to `main`, release only if the git tag `v<version>` does **not** already exist (idempotent, **tag-keyed**; a version ships exactly once). Uncertain/partial state fails closed for a human — see control flow. Shipping = bumping `mix.exs`. |
 | 3 | **Checksums:** a `SHA256SUMS` file (`<sha256>  vzbeam`), verifiable with `shasum -a 256 -c SHA256SUMS`, uploaded to the release alongside the binary. |
-| 4 | **Layout:** fat mise tasks, thin YAML. All logic in `mise.toml [tasks]`; YAML checks out, sets up mise, calls tasks. **Publish gate (defense-in-depth):** the precise gate is the `release` **job-level** `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`; the mise task additionally guards the tag/publish block on `$GITHUB_ACTIONS` being non-empty (GHA-specific, narrower than `$CI`) so a local `mise run release` builds + checksums but can never publish. |
+| 4 | **Layout:** fat mise tasks, thin YAML. Task logic lives in mise tasks — `ci`/`build`/`checksum` inline in `mise.toml`, and the branching `release` orchestration as a `mise-tasks/release` file task (shellcheck-clean, unit-tested); YAML checks out, sets up mise, calls tasks. **Publish gate (defense-in-depth):** the precise gate is the `release` **job-level** `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`; the mise task additionally guards the tag/publish block on `$GITHUB_ACTIONS` being non-empty (GHA-specific, narrower than `$CI`) so a local `mise run release` builds + checksums but can never publish. |
 | 5 | **Published asset name:** Burrito build output stays `burrito_out/vzbeam_macos_silicon` (README + validated build path untouched). The `checksum` task copies it to `burrito_out/vzbeam`; the checksum entry and the published release asset are `vzbeam`. (Trade-off: a bare `vzbeam` name has no platform suffix — fine while the project is Apple-Silicon-macOS-only; re-add the suffix if a second target is ever added.) |
 
 ## Architecture
