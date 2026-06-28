@@ -42,4 +42,18 @@ defmodule VzBeam.CLITest do
     non_ascii = for <<c <- bin>>, c >= 128, do: c
     assert non_ascii == [], "help text contains non-ASCII bytes: #{inspect(non_ascii)}"
   end
+
+  @version_line "vzbeam #{Mix.Project.config()[:version]} - https://github.com/djgoku/vzbeam"
+
+  for flag <- ["version", "--version", "-v"] do
+    test "#{flag} prints 'vzbeam <version> - <github-url>'" do
+      assert {:ok, out} = VzBeam.CLI.run([unquote(flag)])
+      assert IO.iodata_to_binary(out) =~ @version_line
+    end
+  end
+
+  test "help header includes the version + github url line" do
+    assert {:ok, usage} = VzBeam.CLI.run(["--help"])
+    assert IO.iodata_to_binary(usage) =~ @version_line
+  end
 end
