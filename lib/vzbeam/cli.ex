@@ -1,7 +1,15 @@
 defmodule VzBeam.CLI do
   @moduledoc "Entry point: parse argv, dispatch to a verb, return {:ok|:error}."
 
+  # Baked in at compile time: works for both the escript (app: nil) and the
+  # Burrito release, where Application.spec/2 is unreliable.
+  @version Mix.Project.config()[:version]
+  @repo_url "https://github.com/djgoku/vzbeam"
+  @version_line "vzbeam #{@version} - #{@repo_url}"
+
   @usage """
+  #{@version_line}
+
   Usage: vzbeam <command> [args]
 
   Commands:
@@ -32,6 +40,9 @@ defmodule VzBeam.CLI do
   def run([]), do: {:error, 2, @usage}
   def run(["--help"]), do: {:ok, @usage}
   def run(["help"]), do: {:ok, @usage}
+  def run(["version"]), do: {:ok, @version_line <> "\n"}
+  def run(["--version"]), do: {:ok, @version_line <> "\n"}
+  def run(["-v"]), do: {:ok, @version_line <> "\n"}
   def run(["ip" | rest]), do: VzBeam.Commands.Ip.run(rest)
   def run(["ls" | rest]), do: VzBeam.Commands.Ls.run(rest)
   def run(["fetch" | rest]), do: VzBeam.Commands.Fetch.run(rest)
