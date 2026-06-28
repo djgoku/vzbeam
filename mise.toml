@@ -1,21 +1,37 @@
 [tools]
 "conda:xz-tools" = "latest"
+# Pinned to match Burrito 1.5.0. On macOS 26 the Burrito zig build needs the
+# bin/xcrun shim (prepended to PATH in [tasks.build]) to dodge an arm64
+# libSystem link failure. REMOVE-WHEN bumping zig (esp. 0.16+, once Burrito
+# supports it): re-test `mise run build` with the bin/ prepend removed — the
+# shim may no longer be needed.
 zig = "0.15.2"
 "conda:7zip" = "latest"
 elixir = "1.20.0-otp-29"
 erlang = "29"
 
+[tasks.deps]
+description = "Fetch Hex deps (also bootstraps Hex/rebar on a fresh runner)"
+run = "mix deps.get"
+
+[tasks.version]
+description = "Print the project version from mix.exs (no compile or deps required)"
+run = """
+elixir -e 'Regex.run(~r/version: "(.*)"/, File.read!("mix.exs"), capture: :all_but_first) |> List.first() |> IO.puts()'
+"""
+
 [tasks.ci]
 description = "Install deps and run the test suite"
-run = """
-mix deps.get
-mix test
-"""
+depends = ["deps"]
+run = "mix test"
 
 [tasks.build]
 description = "Build the Burrito single-file release (carries the signed vz sidecar)"
+depends = ["deps"]
+# Prepend repo-local bin/ (mise runs tasks from the project root) so bin/xcrun
+# shadows /usr/bin/xcrun for the Burrito zig build. See bin/xcrun for why.
 run = """
-mix deps.get
+export PATH="$PWD/bin:$PATH"
 MIX_ENV=prod mix release --overwrite
 """
 

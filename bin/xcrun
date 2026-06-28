@@ -1,0 +1,53 @@
+#!/bin/bash
+# Build shim: works around a macOS 26 SDK + zig 0.15.2 link failure in Burrito.
+#
+# The macOS 26 SDK's libSystem.tbd exports only arm64e-macos (no arm64-macos),
+# so zig 0.15.2's plain-arm64 Burrito wrapper link resolves no libc symbols and
+# fails with a flood of `undefined symbol:` errors (_fork, _free,
+# __availability_version_check, ...). zig locates the SDK via
+# `xcrun --show-sdk-path`, so we hand it an older SDK that still carries
+# arm64-macos entries. The Swift sidecar (built separately) keeps using the
+# real, current SDK — only zig's link is redirected.
+#
+# This shim is put ahead of /usr/bin via the build task prepending bin/ to PATH.
+# It intercepts ONLY the macOS SDK-path query; every other xcrun invocation
+# (other subcommands, non-macOS SDKs) passes through to the real xcrun.
+#
+# REMOVE-WHEN: bumping zig (especially to 0.16+, once Burrito supports it).
+# Re-test `mise run build` with bin/ off PATH; newer zig/SDK combos may not need
+# this. Background + proof: knowledge base burrito-zig-macos26.md.
+set -euo pipefail
+
+# Detect the exact request shape: a `--show-sdk-path` query for the macOS SDK
+# (xcrun defaults to the macosx SDK when --sdk is omitted on a macOS host).
+want_sdk_path=false
+req_sdk=macosx
+prev=
+for arg in "$@"; do
+  case "$arg" in
+    --show-sdk-path) want_sdk_path=true ;;
+    --sdk=*)         req_sdk=${arg#--sdk=} ;;
+  esac
+  if [[ "$prev" == "--sdk" ]]; then
+    req_sdk=$arg
+  fi
+  prev=$arg
+done
+
+if [[ "$want_sdk_path" == true && "$req_sdk" == macosx* ]]; then
+  for candidate in \
+    /Library/Developer/CommandLineTools/SDKs/MacOSX15*.sdk \
+    /Library/Developer/CommandLineTools/SDKs/MacOSX14*.sdk \
+    /Applications/Xcode*.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15*.sdk \
+    /Applications/Xcode*.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14*.sdk; do
+    if [[ -d "$candidate" ]]; then
+      echo "$candidate"
+      exit 0
+    fi
+  done
+  # No older SDK present: fall through to the real xcrun (returns the arm64e-only
+  # macOS 26 SDK; the build will fail and this host needs an arm64-macos SDK).
+  echo "bin/xcrun: no MacOSX14/15 SDK found; zig link will likely fail" >&2
+fi
+
+exec /usr/bin/xcrun "$@"
