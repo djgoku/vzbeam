@@ -100,7 +100,7 @@ mise run build
 mise run checksum
 
 if gh release create "${TAG}" --target "${GITHUB_SHA}" --latest \
-  --title "${TAG}" --notes "Automated release ${TAG}" \
+  --title "${TAG}" --generate-notes \
   burrito_out/vzbeam burrito_out/SHA256SUMS; then
   echo "release: created ${TAG}"
   exit 0

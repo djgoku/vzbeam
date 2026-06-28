@@ -20,6 +20,14 @@ run = """
 elixir -e 'Regex.run(~r/version: "(.*)"/, File.read!("mix.exs"), capture: :all_but_first) |> List.first() |> IO.puts()'
 """
 
+[tasks.release-notes]
+description = "Preview the auto-generated GitHub release notes for the current version (no publish)"
+run = """
+TAG="v$(mise run version)"
+gh api --method POST "repos/{owner}/{repo}/releases/generate-notes" \
+  -f tag_name="$TAG" -f target_commitish=main --jq '.body'
+"""
+
 [tasks.ci]
 description = "Install deps and run the test suite"
 depends = ["deps"]
