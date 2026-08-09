@@ -1,6 +1,6 @@
 defmodule VzBeam.Commands.Ls do
   @moduledoc "ls — table of bundles."
-  alias VzBeam.{Home, Manifest, Pidfile, Leases}
+  alias VzBeam.{Home, Manifest, Pidfile, Leases, Disk}
 
   @header ["NAME", "STATUS", "BASE", "OS", "IP", "CPU", "MEM", "DISK"]
 
@@ -25,7 +25,7 @@ defmodule VzBeam.Commands.Ls do
       ip(m, leases),
       to_string(m["cpuCount"] || "-"),
       mem(m["memoryBytes"]),
-      "-"
+      Disk.gb(Disk.size(Path.join(Home.bundle_dir(name), "disk.img")))
     ]
   end
 
