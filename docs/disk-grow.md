@@ -36,14 +36,20 @@ The VM must be stopped. `$B` is the bundle, e.g.
    python3 scripts/gptedit.py list "$B/disk.img"
    ```
 
-   Expect three entries; recovery is the ~5.4 GB `RecoveryOSContainer`
-   (type `52637672-7900-11AA-AA11-00306543ECAC`), usually `#3`.
+   Expect three entries; recovery is the ~5.4 GB `RecoveryOSContainer`,
+   flagged `[recoveryOS]` in the listing.
 
 3. Remove it (zeroes the entry in the primary and backup GPT, rewrites CRCs):
 
    ```sh
-   python3 scripts/gptedit.py remove "$B/disk.img" 3
+   python3 scripts/gptedit.py remove-recovery "$B/disk.img"
    ```
+
+   `remove-recovery` locates the partition by its type GUID, so there is no
+   index to get wrong. The script also refuses device nodes (regular files
+   only), refuses images that are currently `hdiutil`-attached, and its
+   `remove <n>` form refuses non-recovery partitions unless `--force` is
+   given.
 
 4. Attach the image and grow the container into the freed space
    (substitute the `diskN` printed by `attach`):
