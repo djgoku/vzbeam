@@ -26,5 +26,5 @@ defmodule VzBeam.MixProject do
     ]
   end
 
-  defp deps, do: [{:jason, "~> 1.4"}, {:burrito, "~> 1.0"}]
+  defp deps, do: [{:jason, "~> 1.4"}, {:burrito, "~> 1.6"}]
 end
