@@ -25,7 +25,8 @@ Disk-sizing caveat: growing an *existing* VM (`set --disk-gb`, or a clone's `--d
 extend the guest's root volume — macOS keeps the SIP-protected recoveryOS partition right behind
 it, so the added space is only usable as a new APFS volume inside the guest. For a full-size root
 volume, pass `--disk-gb` on a fresh `new --image` restore, where the installer partitions the
-whole disk.
+whole disk — or, for disposable VMs, see the experimental host-side procedure in
+[docs/disk-grow.md](docs/disk-grow.md) (deletes the guest's recoveryOS to let the root grow).
 - `run <name> [--gui|--headless] [--share tag=/path]` · `stop` · `kill` · `ssh <name> [-- cmd]`
 - `mix vz.build` — compile + ad-hoc-sign the Swift sidecar into `$VZBEAM_HOME/bin/vz`
 - `MIX_ENV=prod mix release` — package the CLI + the signed sidecar into one self-contained binary (Burrito; no Erlang/Elixir/Swift on the target — see *Packaging* below)
