@@ -47,8 +47,20 @@ defmodule VzBeam.Cache do
   defp ensure_cached_or_local(spec, deps) do
     case lookup_by_build(spec) do
       {:ok, entry} -> {:ok, :cached, entry}
-      :error -> ensure_local(spec, deps)
+      :error -> if buildish?(spec), do: ensure_catalog(spec, deps), else: ensure_local(spec, deps)
     end
+  end
+
+  # A bare token that can't be a real file is a build id we don't have:
+  # resolve it against Apple's catalog and download from there, so
+  # `vzbeam images --remote` -> `vzbeam fetch <BUILD>` works uncached.
+  defp buildish?(spec) do
+    spec != "latest" and not String.contains?(spec, "/") and
+      not String.ends_with?(spec, ".ipsw") and not File.exists?(spec)
+  end
+
+  defp ensure_catalog(spec, deps) do
+    with {:ok, %{"url" => url}} <- deps.catalog.(spec), do: ensure_url(url, deps)
   end
 
   # Case-insensitive: Apple build ids are mixed-case (e.g. 26A5368g) and
@@ -213,7 +225,8 @@ defmodule VzBeam.Cache do
   defp validate_build(_), do: {:error, :bad_build_token}
 
   defp default_deps do
-    %{image_info: &VzBeam.Sidecar.image_info/1, download: &download/2, copy: &cp_clone/2}
+    %{image_info: &VzBeam.Sidecar.image_info/1, download: &download/2, copy: &cp_clone/2,
+      catalog: &VzBeam.Catalog.resolve/1}
   end
 
   defp cp_clone(src, dst) do
