@@ -14,7 +14,8 @@ vzbeam is split into two pieces:
 
 The full CLI, backed by the Swift `vz` sidecar:
 
-- `ls` / `ip` / `images` — inspect bundles, IPs, cached restore images
+- `ls` / `ip` / `images` — inspect bundles, IPs, restore images (cached `local` + Apple-offered
+  `remote`, straight from Apple's IPSW catalog — no third-party services)
 - `fetch <spec>` — download + cache a restore image
 - `new <name> --image <spec>` (restore) · `new <name> <base>` (CoW clone) · `rm` — `new` accepts
   `--cpu N`, `--mem-gb M`, `--disk-gb G` (a clone's disk can only grow past its base)

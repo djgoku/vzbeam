@@ -18,7 +18,7 @@ defmodule VzBeam.CLI do
 
   Images:
     fetch <latest|PATH|URL|BUILD>  download/cache a restore image
-    images                       list cached restore images
+    images                       list restore images (cached + what Apple offers)
 
   Bundles:
     new <name> --image <latest|PATH|URL|BUILD>  restore a fresh base
@@ -52,15 +52,22 @@ defmodule VzBeam.CLI do
 
     Download a macOS restore image into the cache. Every spec resolves to a
     cache entry keyed by its build, so re-fetching the same image is a no-op
-    and the disk is never duplicated.
+    and the disk is never duplicated. An uncached BUILD is resolved through
+    Apple's IPSW catalog (the remote rows of `vzbeam images`) and downloaded.
 
     #{@spec_help}\
     """,
     "images" => """
     Usage: vzbeam images
 
-    List cached restore images: version, build, and source. A listed build id
-    can be passed to `fetch` and `new --image` to reuse the cached image.
+    One table of restore images. STATUS says where each lives:
+      local    in the cache -- usable by `new --image <BUILD>` right away
+      remote   offered by Apple (its IPSW catalog on mesu.apple.com) but not
+               cached yet -- download with `fetch <BUILD>`
+
+    Apple only offers builds it still signs -- the same set a VM can be
+    restored from -- so the remote rows are the full fetchable menu. If the
+    catalog is unreachable (offline), cached images are listed with a note.
     """,
     "new" => """
     Usage: vzbeam new <name> --image <latest|PATH|URL|BUILD>   restore a fresh base
