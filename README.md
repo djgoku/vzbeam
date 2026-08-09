@@ -56,7 +56,7 @@ env var.
 Produce one self-contained `vzbeam` for Apple-Silicon macOS (≥ 13) — no Elixir/Erlang/Swift
 needed on the target. The ad-hoc-signed `vz` sidecar rides inside the binary's payload.
 
-Requires the Swift toolchain plus Zig 0.15.2, `xz`, and `7z` — provisioned by `mise install` from
+Requires the Swift toolchain plus Zig 0.16.0, `xz`, and `7z` — provisioned by `mise install` from
 `mise.toml`, with the exact resolved versions captured in `mise.lock` — on the **build** Mac:
 
 ```sh
@@ -81,20 +81,14 @@ xattr -dr com.apple.quarantine ./vzbeam
 `VZBEAM_DEBUG=1 vzbeam <cmd>` prints which `vz` sidecar was selected. The bundled sidecar is
 overridable by `$VZBEAM_VZ` or a `mix vz.build` install in `$VZBEAM_HOME/bin/vz`.
 
-> **macOS 26 (Tahoe) build host:** Zig 0.15.2 resolves libSystem via `xcrun`, which on Tahoe returns
-> the macOS 26 SDK — whose `.tbd` dropped the `arm64-macos` entries Zig needs, so `mix release` fails
-> with `undefined symbol: _malloc_size` (and friends). `SDKROOT` does **not** help — Zig ignores it
-> here. Until Burrito ships a Tahoe-compatible Zig, either build on macOS ≤ 15, or shadow `xcrun`
-> earlier on `PATH` with a wrapper that points `--show-sdk-path` at
-> `/Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk` (the macOS 15 SDK, installed alongside 26).
-
 ## Install a prebuilt `vzbeam` via mise/aqua
 
 Rather than build, install a released binary straight from GitHub Releases with mise — point
-it at this repo's single-file aqua registry (`aqua/registry.yaml`):
+it at this repo's single-file aqua registry (`registry.yaml` at the repo root, so the plain
+repo URL works):
 
 ```sh
-MISE_AQUA_REGISTRIES=https://raw.githubusercontent.com/djgoku/vzbeam/main/aqua/registry.yaml \
+MISE_AQUA_REGISTRIES=https://github.com/djgoku/vzbeam \
   mise install aqua:djgoku/vzbeam@latest        # or @0.1.0 for a specific release
 ```
 

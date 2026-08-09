@@ -4,7 +4,7 @@ defmodule VzBeam.MixProject do
   def project do
     [
       app: :vzbeam,
-      version: "0.1.0",
+      version: "0.2.0",
       elixir: "~> 1.17",
       escript: [main_module: VzBeam.CLI, app: nil],
       releases: releases(),
@@ -26,5 +26,5 @@ defmodule VzBeam.MixProject do
     ]
   end
 
-  defp deps, do: [{:jason, "~> 1.4"}, {:burrito, "~> 1.0"}]
+  defp deps, do: [{:jason, "~> 1.4"}, {:burrito, "~> 1.6"}]
 end
