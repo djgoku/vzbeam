@@ -84,10 +84,11 @@ overridable by `$VZBEAM_VZ` or a `mix vz.build` install in `$VZBEAM_HOME/bin/vz`
 ## Install a prebuilt `vzbeam` via mise/aqua
 
 Rather than build, install a released binary straight from GitHub Releases with mise — point
-it at this repo's single-file aqua registry (`aqua/registry.yaml`):
+it at this repo's single-file aqua registry (`registry.yaml` at the repo root, so the plain
+repo URL works):
 
 ```sh
-MISE_AQUA_REGISTRIES=https://raw.githubusercontent.com/djgoku/vzbeam/main/aqua/registry.yaml \
+MISE_AQUA_REGISTRIES=https://github.com/djgoku/vzbeam \
   mise install aqua:djgoku/vzbeam@latest        # or @0.1.0 for a specific release
 ```
 

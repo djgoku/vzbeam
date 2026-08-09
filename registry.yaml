@@ -1,8 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/v2.62.1/json-schema/registry.json
 # Single-file aqua registry for installing the released vzbeam binary via mise/aqua.
 #
-# Usage (point mise at this file, then install the package):
-#   MISE_AQUA_REGISTRIES=https://raw.githubusercontent.com/djgoku/vzbeam/main/aqua/registry.yaml \
+# Usage (registry.yaml at the repo root, so the plain repo URL works):
+#   MISE_AQUA_REGISTRIES=https://github.com/djgoku/vzbeam \
 #     mise install aqua:djgoku/vzbeam@latest
+#
+# Local mise test from the repository root:
+#   MISE_AQUA_REGISTRIES=file://$PWD/registry.yaml \
+#     mise x aqua:djgoku/vzbeam@latest -- vzbeam --help
 #
 # The release asset `vzbeam` is a raw, ad-hoc-codesigned arm64 macOS binary. mise verifies
 # it against the GitHub asset digest, copies it into place, and marks it executable. aqua/mise
@@ -11,6 +16,7 @@ packages:
   - type: github_release
     repo_owner: djgoku
     repo_name: vzbeam
+    description: Boot and drive macOS guest VMs on Apple Silicon via Virtualization.framework
     asset: vzbeam
     format: raw
     supported_envs:
