@@ -35,11 +35,14 @@ defmodule VzBeam.Commands.Set do
      " disk=", Disk.gb(Disk.size(disk_path(name))), "\n"]
   end
 
-  # The guest's APFS container doesn't grow with the image; remind how.
+  # Growing the image cannot extend the guest's root volume: macOS lays the
+  # recoveryOS partition right behind it and SIP protects that partition, so
+  # the new space lands after recovery, reachable only as a fresh volume.
   defp disk_hint(_name, nil), do: []
-  defp disk_hint(name, _gb) do
-    ["note: the guest sees the new size, but its APFS container must be grown inside the VM:\n",
-     "  vzbeam ssh ", name, " -- sudo diskutil apfs resizeContainer disk0s2 0\n"]
+  defp disk_hint(_name, _gb) do
+    ["note: the guest sees the new size, but its root volume cannot grow past the\n",
+     "recoveryOS partition; use the space as a new APFS volume, or size the disk at\n",
+     "restore time (new <name> --image <spec> --disk-gb G) for a full-size root.\n"]
   end
 
   defp maybe_grow_disk(_name, nil), do: :ok

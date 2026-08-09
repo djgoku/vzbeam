@@ -60,12 +60,12 @@ defmodule VzBeam.Commands.SetTest do
     {:ok, :ok} = File.open(path, [:write, :raw], fn fd -> :file.pwrite(fd, size - 1, <<0>>) end)
   end
 
-  test "grows the disk and prints the guest-resize hint", %{home: home} do
+  test "grows the disk and prints the root-volume caveat", %{home: home} do
     sparse!(Path.join([home, "dev", "disk.img"]), 1 * @gb)
     assert {:ok, msg} = Set.run(["dev", "--disk-gb", "2"])
     text = IO.iodata_to_binary(msg)
     assert text =~ "cpu=4 mem=8G disk=2G"
-    assert text =~ "diskutil apfs resizeContainer"
+    assert text =~ "root volume cannot grow past"
     assert File.stat!(Path.join([home, "dev", "disk.img"])).size == 2 * @gb
   end
 

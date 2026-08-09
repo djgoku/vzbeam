@@ -76,9 +76,11 @@ defmodule VzBeam.CLI do
     Flags (both forms):
       --cpu N       CPU count       (default #{@d.cpu}; a clone inherits its base)
       --mem-gb M    memory in GiB   (default #{@d.mem_gb}; a clone inherits its base)
-      --disk-gb G   disk in GiB     (default #{@d.disk_gb}; a clone's disk can only grow
-                    past its base -- the image is sparse, so unused space costs
-                    nothing on the host)
+      --disk-gb G   disk in GiB     (default #{@d.disk_gb}; sparse, so unused space costs
+                    nothing on the host. Restore form: macOS installs onto the
+                    full size. Clone form: only grows past the base's size, and
+                    the extra space cannot extend the guest's root volume --
+                    recoveryOS sits in the way; see `vzbeam help set`.)
 
     #{@spec_help}\
     """,
@@ -88,12 +90,14 @@ defmodule VzBeam.CLI do
     Change a stopped VM's sizing. At least one flag is required.
       --cpu N       CPU count
       --mem-gb M    memory in GiB
-      --disk-gb G   grow the disk to G GiB (shrinking is refused: it would
-                    truncate the guest's APFS container)
+      --disk-gb G   grow the disk image to G GiB (shrinking is refused: it
+                    would truncate the guest's APFS container)
 
-    After growing the disk, grow the guest's APFS container inside the VM
-    once it boots:
-      vzbeam ssh <name> -- sudo diskutil apfs resizeContainer disk0s2 0
+    Growing an existing VM cannot extend the guest's ROOT volume: macOS lays
+    the recoveryOS partition right behind it and SIP protects that partition,
+    so the added space is only usable as a new APFS volume inside the guest.
+    For a full-size root volume, size the disk at restore time instead:
+      vzbeam new <name> --image <spec> --disk-gb G
     """,
     "rm" => """
     Usage: vzbeam rm <name>

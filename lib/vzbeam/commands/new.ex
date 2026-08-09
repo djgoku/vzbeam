@@ -62,7 +62,7 @@ defmodule VzBeam.Commands.New do
          {:ok, ids} <- deps.reid.(),
          :ok <- write_manifest(pending, clone_manifest(base_m, name, base, ids, opts)),
          :ok <- File.rename(pending, Home.bundle_dir(name)) do
-      {:ok, ["created ", name, " (clone of ", base, override_note(opts), ")\n"]}
+      {:ok, ["created ", name, " (clone of ", base, override_note(opts), ")\n" | clone_disk_note(opts)]}
     else
       err -> File.rm_rf(pending); error(err)
     end
@@ -84,6 +84,18 @@ defmodule VzBeam.Commands.New do
 
   defp maybe_grow_disk(_pending, nil), do: :ok
   defp maybe_grow_disk(pending, gb), do: Disk.grow(Path.join(pending, "disk.img"), gb * @gb)
+
+  # A clone inherits the base's partition layout, so the grown space lands
+  # after the (SIP-protected) recoveryOS partition and can't extend root.
+  defp clone_disk_note(opts) do
+    if opts[:disk_gb] do
+      ["note: a clone inherits its base's partition layout -- the extra space cannot\n",
+       "extend the guest's root volume (recoveryOS sits in the way); use it as a new\n",
+       "APFS volume, or restore fresh with --disk-gb for a full-size root.\n"]
+    else
+      []
+    end
+  end
 
   defp override_note(opts) do
     notes =

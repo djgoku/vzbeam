@@ -62,7 +62,7 @@ defmodule VzBeam.CLITest do
     assert IO.iodata_to_binary(new_help) =~ "--disk-gb G"
     assert IO.iodata_to_binary(new_help) =~ "latest"
     {:ok, set_help} = VzBeam.CLI.run(["help", "set"])
-    assert IO.iodata_to_binary(set_help) =~ "resizeContainer"
+    assert IO.iodata_to_binary(set_help) =~ "recoveryOS"
   end
 
   test "per-command help is pure ASCII" do

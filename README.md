@@ -19,8 +19,13 @@ The full CLI, backed by the Swift `vz` sidecar:
 - `fetch <spec>` — download + cache a restore image
 - `new <name> --image <spec>` (restore) · `new <name> <base>` (CoW clone) · `rm` — `new` accepts
   `--cpu N`, `--mem-gb M`, `--disk-gb G` (a clone's disk can only grow past its base)
-- `set <name> [--cpu N] [--mem-gb M] [--disk-gb G]` — resize a stopped VM; the disk only grows, and
-  the guest's APFS container must then be grown inside the VM (`vzbeam ssh <name> -- sudo diskutil apfs resizeContainer disk0s2 0`)
+- `set <name> [--cpu N] [--mem-gb M] [--disk-gb G]` — resize a stopped VM (the disk only grows)
+
+Disk-sizing caveat: growing an *existing* VM (`set --disk-gb`, or a clone's `--disk-gb`) cannot
+extend the guest's root volume — macOS keeps the SIP-protected recoveryOS partition right behind
+it, so the added space is only usable as a new APFS volume inside the guest. For a full-size root
+volume, pass `--disk-gb` on a fresh `new --image` restore, where the installer partitions the
+whole disk.
 - `run <name> [--gui|--headless] [--share tag=/path]` · `stop` · `kill` · `ssh <name> [-- cmd]`
 - `mix vz.build` — compile + ad-hoc-sign the Swift sidecar into `$VZBEAM_HOME/bin/vz`
 - `MIX_ENV=prod mix release` — package the CLI + the signed sidecar into one self-contained binary (Burrito; no Erlang/Elixir/Swift on the target — see *Packaging* below)

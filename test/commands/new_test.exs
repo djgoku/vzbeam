@@ -106,6 +106,7 @@ defmodule VzBeam.Commands.NewTest do
   test "clone honors --disk-gb by growing the cloned disk", %{home: home} do
     assert {:ok, msg} = New.run(["dev", "base", "--disk-gb", "2"], deps())
     assert IO.iodata_to_binary(msg) =~ "disk=2G"
+    assert IO.iodata_to_binary(msg) =~ "recoveryOS"  # inherits the base layout
     assert File.stat!(Path.join([home, "dev", "disk.img"])).size == 2 * @gb
     assert File.stat!(Path.join([home, "base", "disk.img"])).size == 4  # base untouched
   end
