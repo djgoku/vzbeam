@@ -1,6 +1,6 @@
 defmodule VzBeam.Commands.New do
-  @moduledoc "new <name> <base> | new <name> --image <latest|PATH|URL|BUILD>"
-  alias VzBeam.{Home, Manifest, Pidfile, Cache, Defaults}
+  @moduledoc "new <name> <base> | new <name> --image <latest|PATH|URL|BUILD> — both accept [--cpu N] [--mem-gb M] [--disk-gb G]"
+  alias VzBeam.{Home, Manifest, Pidfile, Cache, Defaults, Disk}
 
   @reserved ~w(cache keys bin run.lock)
   @gb 1024 * 1024 * 1024
@@ -14,17 +14,42 @@ defmodule VzBeam.Commands.New do
     if invalid != [] do
       {:error, 2, "new: unknown option\n"}
     else
-      case {positional, opts[:image]} do
-        {[name, base], nil} -> clone(name, base, deps)
-        {[name], img} when is_binary(img) -> restore(name, img, opts, deps)
-        {[_, _], img} when is_binary(img) -> {:error, 2, "new: --image is mutually exclusive with a base\n"}
-        _ -> {:error, 2, "usage: vzbeam new <name> <base> | new <name> --image <latest|PATH|URL|BUILD>\n"}
+      with :ok <- validate_sizing(opts) do
+        case {positional, opts[:image]} do
+          {[name, base], nil} ->
+            clone(name, base, opts, deps)
+
+          {[name], img} when is_binary(img) ->
+            restore(name, img, opts, deps)
+
+          {[_, _], img} when is_binary(img) ->
+            {:error, 2, "new: --image is mutually exclusive with a base\n"}
+
+          _ ->
+            {:error, 2,
+             "usage: vzbeam new <name> <base> | new <name> --image <latest|PATH|URL|BUILD>\n"}
+        end
+      else
+        err -> sizing_error(err)
       end
     end
   end
 
+  defp validate_sizing(opts) do
+    cond do
+      is_integer(opts[:cpu]) and opts[:cpu] < 1 -> {:error, :bad_cpu}
+      is_integer(opts[:mem_gb]) and opts[:mem_gb] < 1 -> {:error, :bad_mem}
+      is_integer(opts[:disk_gb]) and opts[:disk_gb] < 1 -> {:error, :bad_disk}
+      true -> :ok
+    end
+  end
+
+  defp sizing_error({:error, :bad_cpu}), do: {:error, 2, "new: --cpu must be >= 1\n"}
+  defp sizing_error({:error, :bad_mem}), do: {:error, 2, "new: --mem-gb must be >= 1\n"}
+  defp sizing_error({:error, :bad_disk}), do: {:error, 2, "new: --disk-gb must be >= 1\n"}
+
   # --- clone ---------------------------------------------------------------
-  defp clone(name, base, deps) do
+  defp clone(name, base, opts, deps) do
     pending = Home.bundle_dir(name) <> ".pending"
 
     with :ok <- validate_name(name),
@@ -33,21 +58,41 @@ defmodule VzBeam.Commands.New do
          :ok <- refute_exists(name),
          :ok <- clear_pending(pending),
          :ok <- cp_rc(Home.bundle_dir(base), pending),
+         :ok <- maybe_grow_disk(pending, opts[:disk_gb]),
          {:ok, ids} <- deps.reid.(),
-         :ok <- write_manifest(pending, clone_manifest(base_m, name, base, ids)),
+         :ok <- write_manifest(pending, clone_manifest(base_m, name, base, ids, opts)),
          :ok <- File.rename(pending, Home.bundle_dir(name)) do
-      {:ok, ["created ", name, " (clone of ", base, ")\n"]}
+      {:ok, ["created ", name, " (clone of ", base, override_note(opts), ")\n"]}
     else
       err -> File.rm_rf(pending); error(err)
     end
   end
 
-  defp clone_manifest(base_m, name, base, ids) do
-    Map.merge(base_m, %{
+  defp clone_manifest(base_m, name, base, ids, opts) do
+    base_m
+    |> Map.merge(%{
       "name" => name, "base" => base,
       "machineIdentifier" => ids.machine_identifier, "macAddress" => ids.mac_address,
       "createdAt" => now()
     })
+    |> maybe_put("cpuCount", opts[:cpu])
+    |> maybe_put("memoryBytes", opts[:mem_gb] && opts[:mem_gb] * @gb)
+  end
+
+  defp maybe_put(m, _key, nil), do: m
+  defp maybe_put(m, key, val), do: Map.put(m, key, val)
+
+  defp maybe_grow_disk(_pending, nil), do: :ok
+  defp maybe_grow_disk(pending, gb), do: Disk.grow(Path.join(pending, "disk.img"), gb * @gb)
+
+  defp override_note(opts) do
+    notes =
+      [opts[:cpu] && "cpu=#{opts[:cpu]}",
+       opts[:mem_gb] && "mem=#{opts[:mem_gb]}G",
+       opts[:disk_gb] && "disk=#{opts[:disk_gb]}G"]
+      |> Enum.filter(& &1)
+
+    if notes == [], do: [], else: [", ", Enum.join(notes, " ")]
   end
 
   # --- restore -------------------------------------------------------------
@@ -63,7 +108,7 @@ defmodule VzBeam.Commands.New do
          :ok <- announce_image(deps, status, entry),
          :ok <- clear_pending(pending),
          :ok <- File.mkdir_p(pending),
-         :ok <- create_sparse(Path.join(pending, "disk.img"), disk_bytes),
+         :ok <- Disk.create_sparse(Path.join(pending, "disk.img"), disk_bytes),
          {:ok, r} <- deps.restore.(%{ipsw: Path.join(Cache.dir(), entry["file"]),
              disk: Path.join(pending, "disk.img"), aux: Path.join(pending, "aux.img"),
              disk_size: disk_bytes, cpu: cpu, mem: mem_bytes}, restore_reporter(deps)),
@@ -134,15 +179,6 @@ defmodule VzBeam.Commands.New do
     Manifest.write_to(Path.join(dir, "config.json"), map)
   end
 
-  defp create_sparse(path, size) do
-    File.open(path, [:write, :raw], fn fd -> :file.pwrite(fd, size - 1, <<0>>) end)
-    |> case do
-      {:ok, :ok} -> :ok
-      {:ok, err} -> err
-      err -> err
-    end
-  end
-
   defp now, do: DateTime.utc_now() |> DateTime.to_iso8601()
 
   defp clear_pending(pending) do
@@ -158,6 +194,10 @@ defmodule VzBeam.Commands.New do
   defp error({:error, :base_running}), do: {:error, 1, "new: base is running; stop it first\n"}
   defp error({:error, :exists}), do: {:error, 1, "new: bundle already exists\n"}
   defp error({:error, {:pending_cleanup, _}}), do: {:error, 1, "new: could not clear a stale .pending dir\n"}
+
+  defp error({:error, {:shrink, have}}),
+    do: {:error, 1, ["new: --disk-gb must be >= the base disk (", Disk.gb(have), ")\n"]}
+
   defp error({:error, reason}), do: {:error, 1, ["new failed: ", inspect(reason), "\n"]}
 
   defp default_deps,
