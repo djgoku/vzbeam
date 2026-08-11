@@ -56,6 +56,42 @@ defmodule VzBeam.Commands.SetTest do
     assert manifest(home)["cpuCount"] == 4
   end
 
+  defp sparse!(path, size) do
+    {:ok, :ok} = File.open(path, [:write, :raw], fn fd -> :file.pwrite(fd, size - 1, <<0>>) end)
+  end
+
+  test "grows the disk and prints the root-volume caveat", %{home: home} do
+    sparse!(Path.join([home, "dev", "disk.img"]), 1 * @gb)
+    assert {:ok, msg} = Set.run(["dev", "--disk-gb", "2"])
+    text = IO.iodata_to_binary(msg)
+    assert text =~ "cpu=4 mem=8G disk=2G"
+    assert text =~ "root volume cannot grow past"
+    assert File.stat!(Path.join([home, "dev", "disk.img"])).size == 2 * @gb
+  end
+
+  test "same-size disk is a no-op success", %{home: home} do
+    sparse!(Path.join([home, "dev", "disk.img"]), 2 * @gb)
+    assert {:ok, msg} = Set.run(["dev", "--disk-gb", "2"])
+    assert IO.iodata_to_binary(msg) =~ "disk=2G"
+    assert File.stat!(Path.join([home, "dev", "disk.img"])).size == 2 * @gb
+  end
+
+  test "refuses to shrink the disk", %{home: home} do
+    sparse!(Path.join([home, "dev", "disk.img"]), 2 * @gb)
+    assert {:error, 1, msg} = Set.run(["dev", "--disk-gb", "1"])
+    assert IO.iodata_to_binary(msg) =~ "disk can only grow (current 2G)"
+    assert File.stat!(Path.join([home, "dev", "disk.img"])).size == 2 * @gb
+  end
+
+  test "errors when the bundle has no disk.img" do
+    assert {:error, 1, msg} = Set.run(["dev", "--disk-gb", "2"])
+    assert IO.iodata_to_binary(msg) =~ "no disk.img"
+  end
+
+  test "usage (exit 2) on sub-1 --disk-gb" do
+    assert {:error, 2, _} = Set.run(["dev", "--disk-gb", "0"])
+  end
+
   test "surfaces a write failure as exit 1", %{home: home} do
     dir = Path.join(home, "dev")
     File.chmod!(dir, 0o500)                     # no write -> the atomic write fails

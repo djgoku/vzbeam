@@ -97,6 +97,61 @@ defmodule VzBeam.Commands.NewTest do
     assert File.exists?(Path.join([home, "dev", "config.json"]))
   end
 
+  @gb 1024 * 1024 * 1024
+
+  defp sparse!(path, size) do
+    {:ok, :ok} = File.open(path, [:write, :raw], fn fd -> :file.pwrite(fd, size - 1, <<0>>) end)
+  end
+
+  test "clone honors --disk-gb by growing the cloned disk", %{home: home} do
+    assert {:ok, msg} = New.run(["dev", "base", "--disk-gb", "2"], deps())
+    assert IO.iodata_to_binary(msg) =~ "disk=2G"
+    assert IO.iodata_to_binary(msg) =~ "recoveryOS"  # inherits the base layout
+    assert File.stat!(Path.join([home, "dev", "disk.img"])).size == 2 * @gb
+    assert File.stat!(Path.join([home, "base", "disk.img"])).size == 4  # base untouched
+  end
+
+  test "clone refuses a --disk-gb smaller than the base disk", %{home: home} do
+    sparse!(Path.join([home, "base", "disk.img"]), 2 * @gb)
+    assert {:error, 1, msg} = New.run(["dev", "base", "--disk-gb", "1"], deps())
+    assert IO.iodata_to_binary(msg) =~ ">= the base disk (2G)"
+    refute File.exists?(Path.join(home, "dev"))
+  end
+
+  test "clone honors --cpu and --mem-gb overrides", %{home: home} do
+    assert {:ok, msg} = New.run(["dev", "base", "--cpu", "8", "--mem-gb", "16"], deps())
+    assert IO.iodata_to_binary(msg) =~ "cpu=8 mem=16G"
+    m = Jason.decode!(File.read!(Path.join([home, "dev", "config.json"])))
+    assert m["cpuCount"] == 8 and m["memoryBytes"] == 16 * @gb
+  end
+
+  test "clone rejects non-positive cpu and memory overrides before creating a bundle", %{
+    home: home
+  } do
+    for args <- [
+          ["--cpu", "0"],
+          ["--cpu", "-1"],
+          ["--mem-gb", "0"],
+          ["--mem-gb", "-1"],
+          ["--disk-gb", "0"],
+          ["--disk-gb", "-1"]
+        ] do
+      assert {:error, 2, msg} = New.run(["dev", "base" | args], deps())
+      assert IO.iodata_to_binary(msg) =~ "must be >= 1"
+      refute File.exists?(Path.join(home, "dev"))
+      refute File.exists?(Path.join(home, "dev.pending"))
+    end
+  end
+
+  test "restore rejects non-positive sizing overrides before creating a bundle", %{home: home} do
+    for args <- [["--cpu", "0"], ["--mem-gb", "0"], ["--disk-gb", "0"]] do
+      assert {:error, 2, msg} = New.run(["fresh", "--image", "latest" | args], deps())
+      assert IO.iodata_to_binary(msg) =~ "must be >= 1"
+      refute File.exists?(Path.join(home, "fresh"))
+      refute File.exists?(Path.join(home, "fresh.pending"))
+    end
+  end
+
   test "rejects an unknown option" do
     assert {:error, 2, _} = New.run(["dev", "base", "--bogus", "x"], deps())
   end

@@ -53,20 +53,41 @@ defmodule VzBeam.CacheTest do
     assert e["build"] == "25F80"
   end
 
-  test "ensure treats an unknown build token as a local spec (not a cache alias)" do
-    # Nothing cached yet, so "25F80" is not a build id — it must go through the
-    # local flow (sidecar image-info), not short-circuit as cached.
-    assert {:ok, :fetched, e} = Cache.ensure("25F80", deps())
-    assert e["build"] == "25F80"
+  defp catalog_deps(build \\ "25F80") do
+    Map.merge(url_deps(build), %{
+      catalog: fn _spec ->
+        {:ok, %{"version" => "26.5.1", "build" => build, "url" => "https://updates.example/x.ipsw"}}
+      end
+    })
   end
 
-  test "ensure does not alias a cached build whose file is gone" do
+  test "ensure resolves an uncached build id through Apple's catalog" do
+    # Nothing cached yet, so "25F80" is a bare token with no local file: it is
+    # resolved against the catalog and downloaded via the URL flow.
+    assert {:ok, :fetched, e} = Cache.ensure("25F80", catalog_deps())
+    assert e["build"] == "25F80"
+    assert File.regular?(Path.join(Cache.dir(), "25F80.ipsw"))
+  end
+
+  test "ensure reports a build the catalog does not offer" do
+    deps = Map.put(deps(), :catalog, fn b -> {:error, {:unknown_build, b}} end)
+    assert {:error, {:unknown_build, "20G80"}} = Cache.ensure("20G80", deps)
+  end
+
+  test "ensure does not consult the catalog for paths, .ipsw files, or latest" do
+    # These all take the local (sidecar image-info) flow even though uncached.
+    boom = fn _ -> raise "catalog must not be consulted" end
+    assert {:ok, :fetched, _} = Cache.ensure("/tmp/x.ipsw", Map.put(deps(), :catalog, boom))
+    assert {:ok, :cached, _} = Cache.ensure("latest", Map.put(deps(), :catalog, boom))
+  end
+
+  test "ensure re-fetches a cached build whose file is gone via the catalog" do
     assert {:ok, :fetched, _} = Cache.ensure("/tmp/x.ipsw", deps())
     File.rm!(Path.join(Cache.dir(), "25F80.ipsw"))
-    # Index still lists 25F80 but the file is gone: the alias must not claim it.
-    # It falls through to ensure_local, where image-info on the bare token fails.
-    no_sidecar = %{deps() | image_info: fn _ -> {:error, :file_gone} end}
-    assert {:error, :file_gone} = Cache.ensure("25F80", no_sidecar)
+    # Index still lists 25F80 but the file is gone: the alias must not claim it;
+    # the bare token falls through to the catalog and is downloaded again.
+    assert {:ok, :fetched, _} = Cache.ensure("25F80", catalog_deps())
+    assert File.regular?(Path.join(Cache.dir(), "25F80.ipsw"))
   end
 
   test "ensure reconciles an orphaned final file into the index" do

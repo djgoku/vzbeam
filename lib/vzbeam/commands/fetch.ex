@@ -7,6 +7,10 @@ defmodule VzBeam.Commands.Fetch do
   def run([spec], %{ensure: ensure}) do
     case ensure.(spec) do
       {:ok, status, e} -> {:ok, [verb(status), " ", e["version"], " (", e["build"], ")\n"]}
+      {:error, {:unknown_build, build}} ->
+        {:error, 1, ["fetch: ", build, " is not cached and Apple no longer offers it ",
+                     "(see vzbeam images)\n"]}
+
       {:error, reason} -> {:error, 1, ["fetch failed: ", inspect(reason), "\n"]}
     end
   end
