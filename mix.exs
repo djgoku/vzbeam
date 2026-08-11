@@ -4,7 +4,7 @@ defmodule VzBeam.MixProject do
   def project do
     [
       app: :vzbeam,
-      version: "0.2.0",
+      version: "0.3.0",
       elixir: "~> 1.17",
       escript: [main_module: VzBeam.CLI, app: nil],
       releases: releases(),
@@ -19,7 +19,15 @@ defmodule VzBeam.MixProject do
       vzbeam: [
         steps: [:assemble, &Burrito.wrap/1],
         burrito: [
-          targets: [macos_silicon: [os: :darwin, cpu: :aarch64]],
+          # custom_erts: reuse the host (mise-installed) OTP instead of
+          # downloading Burrito's universal macOS build. arm64-only output.
+          targets: [
+            macos_silicon: [
+              os: :darwin,
+              cpu: :aarch64,
+              custom_erts: to_string(:code.root_dir())
+            ]
+          ],
           extra_steps: [patch: [post: [VzBeam.Release.StageSidecar]]]
         ]
       ]
