@@ -9,14 +9,19 @@ defmodule VzBeam.Release.StageSidecar do
   def execute(context), do: stage(context, &VzBeam.Sidecar.Build.build_and_sign/0)
 
   @doc false
-  def stage(%{work_dir: work_dir} = context, build_fun) do
+  def stage(%{work_dir: work_dir, mix_release: %{version: version}} = context, build_fun) do
     product =
       case build_fun.() do
         {:ok, p} -> p
         {:error, m} -> raise "vz sidecar staging failed: #{m}"
       end
 
-    [app_dir] = Path.wildcard(Path.join(work_dir, "lib/vzbeam-*"))
+    # --overwrite keeps lib dirs of previously built versions, so a glob can
+    # match more than one; address the current release version exactly.
+    app_dir = Path.join(work_dir, "lib/vzbeam-#{version}")
+
+    File.dir?(app_dir) ||
+      raise "vz sidecar staging failed: missing app dir lib/vzbeam-#{version} in #{work_dir}"
     dest = Path.join([app_dir, "priv", "vz"])
     File.mkdir_p!(Path.dirname(dest))
     File.cp!(product, dest)
