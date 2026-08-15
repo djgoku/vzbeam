@@ -27,7 +27,8 @@ it, so the added space is only usable as a new APFS volume inside the guest. For
 volume, pass `--disk-gb` on a fresh `new --image` restore, where the installer partitions the
 whole disk — or, for disposable VMs, see the experimental host-side procedure in
 [docs/disk-grow.md](docs/disk-grow.md) (deletes the guest's recoveryOS to let the root grow).
-- `run <name> [--gui|--headless] [--share tag=/path]` · `stop` · `kill` · `ssh <name> [-- cmd]`
+- `run <name> [--gui|--headless] [--share <tag>=/host/path]` · `stop` · `kill` · `ssh <name> [-- cmd]`
+  — see [Sharing a host folder](#sharing-a-host-folder)
 - `mix vz.build` — compile + ad-hoc-sign the Swift sidecar into `$VZBEAM_HOME/bin/vz`
 - `MIX_ENV=prod mix release` — package the CLI + the signed sidecar into one self-contained binary (Burrito; no Erlang/Elixir/Swift on the target — see *Packaging* below)
 
@@ -131,10 +132,42 @@ echo 'admin ALL=(ALL) NOPASSWD: /sbin/shutdown' | sudo tee /etc/sudoers.d/vzbeam
 This persists on the base and is inherited by every CoW clone — paid once. (`vzbeam kill` force-stops a
 guest and needs none of this.)
 
+## Sharing a host folder
+
+`run --share <tag>=/host/path` exposes one host directory to the guest over VirtioFS. **`<tag>` is a
+name you choose, not a keyword** — it is the handle the guest mounts by, and the host path is never
+visible inside the guest. Pick something short (≤ 36 bytes, no `=`); the guest mounts it by tag:
+
+```sh
+# host
+vzbeam run dev --share apps=/Volumes/Extreme-SSD/vzbeam/apps
+
+# guest
+mkdir -p apps
+mount_virtiofs apps apps          # mount_virtiofs <tag> <mount-point>
+```
+
+Mounting by host path (`mount_virtiofs /Volumes/Extreme-SSD/vzbeam/apps apps`) fails with
+`fs_tag ... not found` — the guest only ever knows the tag.
+
+Three limits worth knowing:
+
+- **Per-run, not persisted.** The share is not recorded in the bundle, so `--share` must be passed on
+  every `run`; a VM booted without it has no share at all.
+- **The guest mount is not persistent.** `mount_virtiofs` does not survive a guest reboot — re-run it
+  (or wire it into a guest launchd job) each time.
+- **VirtioFS has no `fsync` barrier, and the BEAM has no fallback.** Plain `fsync(2)` works on the
+  share, but `fcntl(F_BARRIERFSYNC)` — which is how Darwin implements Erlang's `file:sync/1` —
+  returns `ENOTTY`, and OTP surfaces that errno verbatim instead of retrying with `fsync(2)` the way
+  SQLite does. Measured on an `AppleVirtIOFS` mount: Python's `os.fsync()` → ok, Erlang's
+  `file:sync/1` → `{error,enotty}`. It bites `mix deps.get` whenever `HEX_HOME` points inside the
+  shared tree: resolution and the downloads finish, then Hex's registry-cache write
+  (`:ets.tab2file(…, sync: true)`) dies with `{:file_error, '…/.mise-hex/cache.ets', :enotty}`. Keep
+  Hex/Mix homes and build output on the guest's own disk; use the share for source and transfer.
+
 ## A note on validation
 
-`mix test` runs the engine's **159 tests** and is the validation entry point for everything
-implemented so far. It does **not** — and cannot — validate the VM-booting paths (`install` / `run`):
+`mix test` is the validation entry point for everything implemented so far. It does **not** — and cannot — validate the VM-booting paths (`install` / `run`):
 Apple's Virtualization.framework does not support running a macOS guest inside a macOS guest, so a
 *virtualized* dev box can't boot guests at all. Those paths are validated on **bare-metal Apple
 Silicon** via a separate, hardware-gated suite: restore, boot + `--gui`, CoW clone, headless
