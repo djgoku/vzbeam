@@ -27,7 +27,7 @@ defmodule VzBeam.CLI do
     rm <name>                    delete a stopped bundle
 
   Lifecycle:
-    run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]  boot a VM (detached)
+    run <name> [--gui|--headless] [--resolution WxH] [--share <tag>=/host/path]  boot a VM (detached)
     stop <name>                  graceful guest shutdown over SSH
     kill <name>                  force power-off (SIGTERM, then SIGKILL)
     ssh <name> [-- cmd...]       ssh into a VM (interactive or one-shot)
@@ -105,14 +105,27 @@ defmodule VzBeam.CLI do
     Delete a stopped bundle. Refuses if the VM is running; stop or kill it first.
     """,
     "run" => """
-    Usage: vzbeam run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]
+    Usage: vzbeam run <name> [--gui|--headless] [--resolution WxH] [--share <tag>=/host/path]
 
     Boot a VM detached; the CLI returns once the VM is up.
-      --gui              open a window
-      --headless         no window (the default)
-      --resolution WxH   GUI resolution (default #{@d.resolution}; see `vzbeam displays`)
-      --share tag=/path  share a host dir into the guest via VirtioFS (tag <= 36
-                         bytes); mount it in the guest: mount_virtiofs <tag> <dir>
+      --gui                    open a window
+      --headless               no window (the default)
+      --resolution WxH         GUI resolution (default #{@d.resolution}; see `vzbeam displays`)
+      --share <tag>=/host/path share a host dir into the guest via VirtioFS. <tag> is a
+                               name you choose (<= 36 bytes, no '='), not a keyword: it
+                               is the handle the guest mounts by, and the host path is
+                               never visible inside the guest. Mount it yourself, e.g.
+
+                                 host:  vzbeam run dev --share apps=/Volumes/SSD/apps
+                                 guest: mkdir -p apps && mount_virtiofs apps apps
+
+                               The share lasts only as long as this run -- it is not
+                               saved in the bundle, so pass --share on every boot -- and
+                               the guest-side mount does not survive a guest reboot.
+                               VirtioFS also has no fsync barrier: plain fsync(2) works,
+                               but the fcntl behind Erlang's file:sync returns ENOTTY --
+                               which breaks `mix deps.get` when HEX_HOME is inside the
+                               share -- so keep Hex/Mix homes on the guest's own disk.
     """,
     "stop" => """
     Usage: vzbeam stop <name>
