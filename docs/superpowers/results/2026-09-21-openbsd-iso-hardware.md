@@ -1,8 +1,11 @@
 # OpenBSD ISO support: physical Apple Silicon results
 
-Date: 2026-09-22  
-Branch: `openbsd-iso-support`  
-Host: MacBook Neo (`Mac17,5`), Apple A18 Pro, 8 GB RAM  
+Date: 2026-09-22
+
+Branch: `openbsd-iso-support`
+
+Host: MacBook Neo (`Mac17,5`), Apple A18 Pro, 8 GB RAM
+
 Host OS: macOS 27.2 (`26B5091g`), `arm64`
 
 This record separates physical VM observations from non-booting configuration checks.
@@ -158,7 +161,7 @@ Commands:
 
 ## Automated checks
 
-- **PASS** — `mix test`: 275 tests passed.
+- **PASS** — `mix test`: 285 tests passed.
 - **PASS** — the ad-hoc-signed `vzcheck` executable reported `ALL CHECKS PASS`, including
   temporary NVRAM cleanup, ISO-only recovery storage, explicit XHCI configuration,
   installation storage, normal storage, graphics, input, network, and parser checks.

@@ -60,7 +60,10 @@ defmodule VzBeam.Sidecar do
 
   @spec call(String.t(), [String.t()], fun) :: {:ok, [Protocol.event()]} | {:error, term}
   def call(subcommand, args, runner \\ &System.cmd/3) do
-    with {:ok, path} <- locate(), do: call_at(path, subcommand, args, runner)
+    with {:ok, path} <- locate(),
+         :ok <- check_version(path, runner) do
+      call_at(path, subcommand, args, runner)
+    end
   end
 
   # Invoke an already-located sidecar — skips a second locate/0 when the caller
@@ -116,7 +119,8 @@ defmodule VzBeam.Sidecar do
   @spec stream(String.t(), [String.t()], (Protocol.event() -> any)) ::
           {:ok, [Protocol.event()]} | {:error, term}
   def stream(subcommand, args, on_event \\ fn _ -> :ok end) do
-    with {:ok, path} <- locate() do
+    with {:ok, path} <- locate(),
+         :ok <- check_version(path) do
       stderr = Path.join(System.tmp_dir!(), "vz-stderr-#{System.unique_integer([:positive])}")
       cmd = "#{Shell.join([path, subcommand | args])} 2>#{Shell.quote_arg(stderr)}"
 

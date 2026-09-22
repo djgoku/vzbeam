@@ -1,6 +1,6 @@
 defmodule VzBeam.Commands.NewTest do
   use ExUnit.Case, async: false
-  alias VzBeam.{Commands.New, PendingBundle}
+  alias VzBeam.{Commands.New, IsoCache, PendingBundle}
 
   setup do
     home = Path.join(System.tmp_dir!(), "vzbeam-#{System.unique_integer([:positive])}")
@@ -283,6 +283,62 @@ defmodule VzBeam.Commands.NewTest do
       refute File.exists?(Path.join(home, "obsd"))
       refute File.exists?(Path.join(home, "obsd.pending"))
     end
+  end
+
+  test "--iso describes missing and empty installation media", %{home: home} do
+    media_deps = %{deps() | ensure_iso: &IsoCache.ensure/1}
+    missing = Path.join(home, "missing.iso")
+    empty = Path.join(home, "empty.iso")
+    File.write!(empty, "")
+
+    assert {:error, 1, missing_message} = New.run(["missing", "--iso", missing], media_deps)
+    assert IO.iodata_to_binary(missing_message) =~ "missing or not a regular file"
+
+    assert {:error, 1, empty_message} = New.run(["empty", "--iso", empty], media_deps)
+    assert IO.iodata_to_binary(empty_message) =~ "ISO is empty"
+
+    refute File.exists?(Path.join(home, "missing.pending"))
+    refute File.exists?(Path.join(home, "empty.pending"))
+  end
+
+  test "promotion failure preserves the completed pending bundle", %{home: home} do
+    preserving = %{deps() | promote_pending: fn _claim -> {:error, :lock_timeout} end}
+    pending = Path.join(home, "obsd.pending")
+
+    assert {:error, 1, message} = New.run(["obsd", "--iso", "x.iso"], preserving)
+    text = IO.iodata_to_binary(message)
+    assert text =~ "preserved"
+    assert text =~ pending
+    assert text =~ Path.join(home, "obsd")
+    assert text =~ "install-owner.json"
+    assert text =~ "Do not rerun"
+    assert File.regular?(Path.join(pending, "disk.img"))
+    assert File.regular?(Path.join(pending, "nvram.bin"))
+    assert File.regular?(Path.join(pending, "config.json"))
+  end
+
+  test "protocol mismatch tells the user to rebuild the sidecar" do
+    stale = %{deps() | reid: fn _guest -> {:error, {:incompatible, 1, 2}} end}
+
+    assert {:error, 1, message} = New.run(["dev", "base"], stale)
+    text = IO.iodata_to_binary(message)
+    assert text =~ "protocol 1"
+    assert text =~ "mix vz.build"
+  end
+
+  test "a bare final path is rejected before ISO acquisition", %{home: home} do
+    final = Path.join(home, "obsd")
+    File.mkdir_p!(final)
+
+    no_media = %{
+      deps()
+      | ensure_iso: fn _ ->
+          flunk("must reject the occupied final path before acquiring media")
+        end
+    }
+
+    assert {:error, 1, message} = New.run(["obsd", "--iso", "x.iso"], no_media)
+    assert IO.iodata_to_binary(message) =~ "bundle already exists"
   end
 
   test "ISO acquisition completes before the pending claim", %{home: _home} do

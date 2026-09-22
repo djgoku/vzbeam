@@ -59,6 +59,8 @@ private func parseResolution(_ s: String) -> (Int, Int) {
 }
 
 final class RunSession: NSObject, VZVirtualMachineDelegate {
+    // Keep the installed disk absent while EFI commits to the only bootable device.
+    // Attaching earlier reproduced nondeterministic disk-first boots on hardware.
     private static let recoveryDiskAttachDelay: TimeInterval = 5
 
     private let opts: RunOpts
@@ -106,7 +108,7 @@ final class RunSession: NSObject, VZVirtualMachineDelegate {
     private func completeStart(vm: VZVirtualMachine) {
         guard opts.recovery else { return emitStarted() }
         guard #available(macOS 15.0, *), let controller = vm.usbControllers.first else {
-            return finishError(ConfigError.badField("OpenBSD recovery requires macOS 15 or newer"))
+            return finishError(ConfigError.unsupported("OpenBSD recovery requires macOS 15 or newer"))
         }
 
         let device: VZUSBMassStorageDevice

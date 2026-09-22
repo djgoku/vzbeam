@@ -33,6 +33,9 @@ check("err.config.domain", cfgF.domain == "vz")
 check("err.config.code", cfgF.code == 2)
 check("err.config.message", cfgF.message == "invalid mac")
 
+let unsupportedF = Wire.errorFields(ConfigError.unsupported("OpenBSD recovery requires macOS 15 or newer"))
+check("err.unsupported.message", unsupportedF.message == "OpenBSD recovery requires macOS 15 or newer")
+
 let plainF = Wire.errorFields(NSError(domain: "VZErrorDomain", code: 6,
                                       userInfo: [NSLocalizedDescriptionKey: "max VMs"]))
 check("err.framework.domain", plainF.domain == "VZErrorDomain")
@@ -179,6 +182,12 @@ do {
     check("efi.boot", guiCfg.bootLoader is VZEFIBootLoader)
     check("efi.storage.count", guiCfg.storageDevices.count == 2)
     check("efi.storage.iso-first", guiCfg.storageDevices.first is VZUSBMassStorageDeviceConfiguration)
+    if let iso = guiCfg.storageDevices.first as? VZUSBMassStorageDeviceConfiguration,
+       let attachment = iso.attachment as? VZDiskImageStorageDeviceAttachment {
+        check("efi.storage.iso-read-only", attachment.isReadOnly)
+    } else {
+        check("efi.storage.iso-read-only", false)
+    }
     check("efi.storage.disk-second", guiCfg.storageDevices.last is VZVirtioBlockDeviceConfiguration)
     check("efi.graphics", guiCfg.graphicsDevices.first is VZVirtioGraphicsDeviceConfiguration)
     check("efi.entropy", guiCfg.entropyDevices.first is VZVirtioEntropyDeviceConfiguration)

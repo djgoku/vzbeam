@@ -41,7 +41,7 @@ func buildEFIConfiguration(_ o: RunOpts) throws -> VZVirtualMachineConfiguration
     }
     if o.recovery {
         guard #available(macOS 15.0, *) else {
-            throw ConfigError.badField("OpenBSD recovery requires macOS 15 or newer")
+            throw ConfigError.unsupported("OpenBSD recovery requires macOS 15 or newer")
         }
         cfg.usbControllers = [VZXHCIControllerConfiguration()]
     } else {
