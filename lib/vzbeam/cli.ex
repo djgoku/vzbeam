@@ -22,12 +22,14 @@ defmodule VzBeam.CLI do
 
   Bundles:
     new <name> --image <latest|PATH|URL|BUILD>  restore a fresh base
+    new <name> --iso PATH      install OpenBSD interactively from a local ISO
     new <name> <base>            clone a stopped base (CoW)
     set <name> [--cpu N] [--mem-gb M] [--disk-gb G]  change a stopped VM
     rm <name>                    delete a stopped bundle
 
   Lifecycle:
-    run <name> [--gui|--headless] [--resolution WxH] [--share <tag>=/host/path]  boot a VM (detached)
+    run <name> [--gui|--headless] [--resolution WxH] [--share <tag>=/host/path] [--iso [PATH]]
+                                 boot a VM (detached; --iso is OpenBSD recovery)
     stop <name>                  graceful guest shutdown over SSH
     kill <name>                  force power-off (SIGTERM, then SIGKILL)
     ssh <name> [-- cmd...]       ssh into a VM (interactive or one-shot)
@@ -71,16 +73,27 @@ defmodule VzBeam.CLI do
     """,
     "new" => """
     Usage: vzbeam new <name> --image <latest|PATH|URL|BUILD>   restore a fresh base
+           vzbeam new <name> --iso PATH                        install OpenBSD interactively
            vzbeam new <name> <base>                            clone a stopped base (CoW)
 
     Flags (both forms):
       --cpu N       CPU count       (default #{@d.cpu}; a clone inherits its base)
       --mem-gb M    memory in GiB   (default #{@d.mem_gb}; a clone inherits its base)
       --disk-gb G   disk in GiB     (default #{@d.disk_gb}; sparse, so unused space costs
-                    nothing on the host. Restore form: macOS installs onto the
-                    full size. Clone form: only grows past the base's size, and
-                    the extra space cannot extend the guest's root volume --
-                    recoveryOS sits in the way; see `vzbeam help set`.)
+                    nothing on the host. An installer uses the full size. A clone
+                    only grows past its base; see `vzbeam help set`.)
+
+    OpenBSD install flags:
+      --ssh-user USER       SSH user to store for this bundle (default #{@d.ssh_user})
+      --resolution WxH      installer window resolution (default #{@d.resolution})
+
+    --iso accepts a local regular file only. vzbeam retains it in a content-addressed
+    ISO cache but does not verify OpenBSD signatures; verify the release SHA256 and
+    signatures yourself. Installation is interactive: create the selected SSH user,
+    enable sshd, and finish the installer with `halt -p`. The command completes only after
+    guest power-off. OpenBSD 7.9+ ARM64 media is supported.
+
+    --image remains the macOS IPSW restore form:
 
     #{@spec_help}\
     """,
@@ -93,11 +106,14 @@ defmodule VzBeam.CLI do
       --disk-gb G   grow the disk image to G GiB (shrinking is refused: it
                     would truncate the guest's APFS container)
 
-    Growing an existing VM cannot extend the guest's ROOT volume: macOS lays
-    the recoveryOS partition right behind it and SIP protects that partition,
-    so the added space is only usable as a new APFS volume inside the guest.
-    For a full-size root volume, size the disk at restore time instead:
+    For macOS, growing an existing VM cannot extend the guest's ROOT volume:
+    recoveryOS sits right behind it and SIP protects that partition, so the
+    added space is only usable as a new APFS volume inside the guest. For a
+    full-size root volume, size the disk at restore time instead:
       vzbeam new <name> --image <spec> --disk-gb G
+
+    For OpenBSD, growth leaves unallocated guest space. Use OpenBSD disk and
+    filesystem tools inside the guest to partition and grow into it.
     """,
     "rm" => """
     Usage: vzbeam rm <name>
@@ -106,11 +122,17 @@ defmodule VzBeam.CLI do
     """,
     "run" => """
     Usage: vzbeam run <name> [--gui|--headless] [--resolution WxH] [--share <tag>=/host/path]
+           vzbeam run <name> --iso [PATH]
 
     Boot a VM detached; the CLI returns once the VM is up.
       --gui                    open a window
       --headless               no window (the default)
       --resolution WxH         GUI resolution (default #{@d.resolution}; see `vzbeam displays`)
+      --iso [PATH]             OpenBSD recovery media; implies --gui and conflicts
+                               with --headless. With no PATH, use the bundle's cached
+                               installer ISO. With PATH, attach that local ISO for
+                               this run only, without caching or changing its stored
+                               media reference.
       --share <tag>=/host/path share a host dir into the guest via VirtioFS. <tag> is a
                                name you choose (<= 36 bytes, no '='), not a keyword: it
                                is the handle the guest mounts by, and the host path is
@@ -126,12 +148,20 @@ defmodule VzBeam.CLI do
                                but the fcntl behind Erlang's file:sync returns ENOTTY --
                                which breaks `mix deps.get` when HEX_HOME is inside the
                                share -- so keep Hex/Mix homes on the guest's own disk.
+
+    OpenBSD does not support vzbeam's --share path. Recovery media is attached
+    read-only, remains attached across guest reboots during that invocation, and
+    is detached on the next normal run.
     """,
     "stop" => """
     Usage: vzbeam stop <name>
 
-    Graceful guest shutdown over SSH (sudo -n shutdown -h now), then waits for
-    the VM process to exit.
+    Graceful guest shutdown over SSH, then waits for the VM process to exit.
+      macOS:   sudo -n shutdown -h now
+      OpenBSD: doas -n /sbin/shutdown -p now
+
+    The guest must allow its stored SSH user to run the matching command without
+    a password. If that narrow rule is not configured, use `vzbeam kill <name>`.
     """,
     "kill" => """
     Usage: vzbeam kill <name>
@@ -142,8 +172,9 @@ defmodule VzBeam.CLI do
     "ssh" => """
     Usage: vzbeam ssh <name> [-- cmd...]
 
-    SSH into the VM with vzbeam's generated key (user "#{@d.ssh_user}"). With no
-    command: an interactive shell. After `--`: run a one-shot command, e.g.
+    SSH into the VM with vzbeam's generated key and the bundle's stored SSH user
+    (default "#{@d.ssh_user}"). With no command: an interactive shell. After `--`:
+    run a one-shot command, e.g.
       vzbeam ssh dev -- sw_vers
     """,
     "ls" => """
@@ -168,8 +199,12 @@ defmodule VzBeam.CLI do
   @spec main([String.t()]) :: no_return
   def main(argv) do
     case run(argv) do
-      {:ok, out} -> IO.write(out)
-      {:error, code, out} -> IO.write(:stderr, out); System.halt(code)
+      {:ok, out} ->
+        IO.write(out)
+
+      {:error, code, out} ->
+        IO.write(:stderr, out)
+        System.halt(code)
     end
   end
 

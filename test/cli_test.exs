@@ -22,7 +22,8 @@ defmodule VzBeam.CLITest do
   end
 
   test "displays dispatches (arity guard) and appears in help" do
-    assert {:error, 2, _} = VzBeam.CLI.run(["displays", "extra"])  # routed to the verb, not help
+    # routed to the verb, not help
+    assert {:error, 2, _} = VzBeam.CLI.run(["displays", "extra"])
     assert IO.iodata_to_binary(elem(VzBeam.CLI.run(["--help"]), 1)) =~ "displays"
   end
 
@@ -65,9 +66,27 @@ defmodule VzBeam.CLITest do
     assert IO.iodata_to_binary(set_help) =~ "recoveryOS"
   end
 
+  test "per-command help documents OpenBSD install, recovery, and shutdown" do
+    {:ok, new_help} = VzBeam.CLI.run(["help", "new"])
+    new_help = IO.iodata_to_binary(new_help)
+    assert new_help =~ "new <name> --iso PATH"
+    assert new_help =~ "--ssh-user USER"
+
+    {:ok, run_help} = VzBeam.CLI.run(["help", "run"])
+    run_help = IO.iodata_to_binary(run_help)
+    assert run_help =~ "run <name> --iso [PATH]"
+    assert run_help =~ "implies --gui"
+
+    {:ok, stop_help} = VzBeam.CLI.run(["help", "stop"])
+    assert IO.iodata_to_binary(stop_help) =~ "doas -n /sbin/shutdown -p now"
+  end
+
   test "per-command help is pure ASCII" do
-    for {:ok, help} <- Enum.map(~w(fetch images new set rm run stop kill ssh ls ip displays),
-                                &VzBeam.CLI.run(["help", &1])) do
+    for {:ok, help} <-
+          Enum.map(
+            ~w(fetch images new set rm run stop kill ssh ls ip displays),
+            &VzBeam.CLI.run(["help", &1])
+          ) do
       non_ascii = for <<c <- IO.iodata_to_binary(help)>>, c >= 128, do: c
       assert non_ascii == []
     end
