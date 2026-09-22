@@ -33,7 +33,7 @@ defmodule VzBeam.Commands.NewTest do
 
   defp deps do
     %{
-      reid: fn -> {:ok, %{machine_identifier: "NEW", mac_address: "5e:ff"}} end,
+      reid: fn _guest -> {:ok, %{machine_identifier: "NEW", mac_address: "5e:ff"}} end,
       ensure: fn _ ->
         {:ok, :fetched, %{"version" => "26.5.1", "build" => "25F80", "file" => "25F80.ipsw"}}
       end,
@@ -54,7 +54,18 @@ defmodule VzBeam.Commands.NewTest do
   end
 
   test "clone copies the bundle and re-identifies it", %{home: home} do
-    assert {:ok, _} = New.run(["dev", "base"], deps())
+    parent = self()
+
+    clone_deps = %{
+      deps()
+      | reid: fn guest ->
+          send(parent, {:reid_guest, guest})
+          {:ok, %{machine_identifier: "NEW", mac_address: "5e:ff"}}
+        end
+    }
+
+    assert {:ok, _} = New.run(["dev", "base"], clone_deps)
+    assert_received {:reid_guest, :macos}
     m = Jason.decode!(File.read!(Path.join([home, "dev", "config.json"])))
     assert m["base"] == "base" and m["machineIdentifier"] == "NEW" and m["macAddress"] == "5e:ff"
     assert m["schemaVersion"] == 2 and m["guestOS"] == "macos"

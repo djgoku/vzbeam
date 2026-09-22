@@ -2,10 +2,14 @@ defmodule VzBeam.Sidecar do
   @moduledoc "Locate, version-check, and invoke the Swift `vz` sidecar."
   alias VzBeam.{Home, Protocol, Shell}
 
-  @protocol_version 1
+  @protocol_version 2
   @line_max 1_048_576
-  @terminals %{"image-info" => ["image"], "restore" => ["restored"],
-               "reid" => ["reid"], "--version" => ["version"]}
+  @terminals %{
+    "image-info" => ["image"],
+    "restore" => ["restored"],
+    "reid" => ["reid"],
+    "--version" => ["version"]
+  }
 
   # A release's bundled sidecar comes before $VZBEAM_HOME/bin/vz: that path is shared
   # by every vzbeam on the machine, so a stale `mix vz.build` there would otherwise
@@ -13,12 +17,21 @@ defmodule VzBeam.Sidecar do
   # through to it; VZBEAM_VZ overrides everything.
   @spec locate({:error, term} | charlist | binary) :: {:ok, Path.t()} | {:error, :not_found}
   def locate(priv_dir \\ :code.priv_dir(:vzbeam)) do
-    [System.get_env("VZBEAM_VZ"), priv_vz(priv_dir), Path.join([Home.root(), "bin", "vz"]),
-     alongside_cli(), System.find_executable("vz")]
+    [
+      System.get_env("VZBEAM_VZ"),
+      priv_vz(priv_dir),
+      Path.join([Home.root(), "bin", "vz"]),
+      alongside_cli(),
+      System.find_executable("vz")
+    ]
     |> Enum.find(&usable?/1)
     |> case do
-      nil -> {:error, :not_found}
-      path -> debug(path); {:ok, path}
+      nil ->
+        {:error, :not_found}
+
+      path ->
+        debug(path)
+        {:ok, path}
     end
   end
 
@@ -63,8 +76,12 @@ defmodule VzBeam.Sidecar do
     result = Protocol.collect(lines, Map.get(@terminals, subcommand, []), final_newline?)
 
     cond do
-      match?({:error, {:vz, _, _, _}}, result) -> result
-      status != 0 -> {:error, {:exit, status}}
+      match?({:error, {:vz, _, _, _}}, result) ->
+        result
+
+      status != 0 ->
+        {:error, {:exit, status}}
+
       true ->
         case result do
           {:ok, events, _terminal} -> {:ok, events}
@@ -91,20 +108,28 @@ defmodule VzBeam.Sidecar do
     end
   end
 
-  @spec reid(fun) :: {:ok, map} | {:error, term}
-  def reid(runner \\ &System.cmd/3) do
-    with {:ok, events} <- call("reid", [], runner),
+  @spec reid(:macos | :openbsd, fun) :: {:ok, map} | {:error, term}
+  def reid(guest, runner \\ &System.cmd/3) when guest in [:macos, :openbsd] do
+    with {:ok, events} <- call("reid", ["--guest", Atom.to_string(guest)], runner),
          {:event, "reid", m} <- find(events, "reid") do
       {:ok, %{machine_identifier: m["machineIdentifier"], mac_address: m["macAddress"]}}
     end
   end
 
-  @spec stream(String.t(), [String.t()], (Protocol.event() -> any)) :: {:ok, [Protocol.event()]} | {:error, term}
+  @spec stream(String.t(), [String.t()], (Protocol.event() -> any)) ::
+          {:ok, [Protocol.event()]} | {:error, term}
   def stream(subcommand, args, on_event \\ fn _ -> :ok end) do
     with {:ok, path} <- locate() do
       stderr = Path.join(System.tmp_dir!(), "vz-stderr-#{System.unique_integer([:positive])}")
       cmd = "#{Shell.join([path, subcommand | args])} 2>#{Shell.quote_arg(stderr)}"
-      port = Port.open({:spawn_executable, "/bin/sh"}, [:binary, :exit_status, {:line, @line_max}, args: ["-c", cmd]])
+
+      port =
+        Port.open({:spawn_executable, "/bin/sh"}, [
+          :binary,
+          :exit_status,
+          {:line, @line_max},
+          args: ["-c", cmd]
+        ])
 
       {events, status, corrupt?} = collect_stream(port, on_event, [], false)
       tail = stderr_tail(stderr)
@@ -115,14 +140,31 @@ defmodule VzBeam.Sidecar do
 
   @spec restore(map, (Protocol.event() -> any)) :: {:ok, map} | {:error, term}
   def restore(opts, on_event \\ fn _ -> :ok end) do
-    args = ["--ipsw", opts.ipsw, "--disk", opts.disk, "--aux", opts.aux,
-            "--disk-size", to_string(opts.disk_size),
-            "--cpu", to_string(opts.cpu), "--mem", to_string(opts.mem)]
+    args = [
+      "--ipsw",
+      opts.ipsw,
+      "--disk",
+      opts.disk,
+      "--aux",
+      opts.aux,
+      "--disk-size",
+      to_string(opts.disk_size),
+      "--cpu",
+      to_string(opts.cpu),
+      "--mem",
+      to_string(opts.mem)
+    ]
 
     with {:ok, events} <- stream("restore", args, on_event),
          {:event, "restored", m} <- find(events, "restored") do
-      {:ok, %{machine_identifier: m["machineIdentifier"], hardware_model: m["hardwareModel"],
-              mac_address: m["macAddress"], version: m["version"], build: m["build"]}}
+      {:ok,
+       %{
+         machine_identifier: m["machineIdentifier"],
+         hardware_model: m["hardwareModel"],
+         mac_address: m["macAddress"],
+         version: m["version"],
+         build: m["build"]
+       }}
     end
   end
 
@@ -130,8 +172,12 @@ defmodule VzBeam.Sidecar do
     receive do
       {^port, {:data, {:eol, line}}} ->
         case Protocol.decode_line(line) do
-          {:event, _, _} = ev -> on_event.(ev); collect_stream(port, on_event, [ev | acc], corrupt?)
-          {:error, _} -> collect_stream(port, on_event, acc, true)
+          {:event, _, _} = ev ->
+            on_event.(ev)
+            collect_stream(port, on_event, [ev | acc], corrupt?)
+
+          {:error, _} ->
+            collect_stream(port, on_event, acc, true)
         end
 
       # A partial line — an oversize (>1 MiB) line or unterminated trailing bytes.
@@ -151,7 +197,9 @@ defmodule VzBeam.Sidecar do
   # terminal; else no terminal at all.
   defp resolve(events, subcommand, status, stderr_tail, corrupt?) do
     error = Enum.find(events, &match?({:event, "error", _}, &1))
-    terminal = Enum.find(events, fn {:event, t, _} -> t in Map.get(@terminals, subcommand, []) end)
+
+    terminal =
+      Enum.find(events, fn {:event, t, _} -> t in Map.get(@terminals, subcommand, []) end)
 
     cond do
       error ->

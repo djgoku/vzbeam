@@ -12,11 +12,13 @@ defmodule VzBeam.SidecarTest do
     home = Path.join(System.tmp_dir!(), "vzbeam-sidecar-#{System.unique_integer([:positive])}")
     System.put_env("VZBEAM_HOME", home)
     System.put_env("VZBEAM_VZ", @fake)
+
     on_exit(fn ->
       System.delete_env("VZBEAM_VZ")
       System.delete_env("VZBEAM_HOME")
       File.rm_rf(home)
     end)
+
     :ok
   end
 
@@ -72,16 +74,17 @@ defmodule VzBeam.SidecarTest do
     end
   end
 
-  test "check_version accepts protocol 1 (real subprocess, default runner)" do
+  test "check_version accepts protocol 2 (real subprocess, default runner)" do
     {:ok, path} = Sidecar.locate()
     assert :ok = Sidecar.check_version(path)
   end
 
   test "check_version validates the given path without re-locating" do
     parent = self()
+
     runner = fn path, ["--version"], _ ->
       send(parent, {:ran_at, path})
-      {~s({"type":"version","protocol":1}\n), 0}
+      {~s({"type":"version","protocol":2}\n), 0}
     end
 
     assert :ok = Sidecar.check_version("/explicit/vz", runner)
@@ -92,12 +95,24 @@ defmodule VzBeam.SidecarTest do
     runner = fn _p, ["image-info", "latest"], _ ->
       {~s({"type":"image","version":"26.5.1","build":"25F80","url":"u","source":"latest"}\n), 0}
     end
+
     assert {:ok, %{version: "26.5.1", build: "25F80", source: "latest"}} =
              Sidecar.image_info("latest", runner)
   end
 
-  test "reid parses the reid event via the real fake_vz" do
-    assert {:ok, %{machine_identifier: "NEW-ID", mac_address: "5e:11:22:33:44:55"}} = Sidecar.reid()
+  test "reid passes the guest and parses the identity" do
+    parent = self()
+
+    runner = fn _path, ["reid", "--guest", "openbsd"], _opts ->
+      send(parent, :openbsd_reid)
+
+      {~s({"type":"reid","machineIdentifier":"GENERIC","macAddress":"5e:11:22:33:44:55"}\n), 0}
+    end
+
+    assert {:ok, %{machine_identifier: "GENERIC", mac_address: "5e:11:22:33:44:55"}} =
+             Sidecar.reid(:openbsd, runner)
+
+    assert_received :openbsd_reid
   end
 
   test "an error event maps to a typed VZ error (real fake_vz, exit 3)" do
@@ -105,12 +120,16 @@ defmodule VzBeam.SidecarTest do
   end
 
   test "truncated output surfaces as :unterminated" do
-    runner = fn _p, _a, _ -> {~s({"type":"image","build":"25F80"}), 0} end  # no trailing newline
+    # no trailing newline
+    runner = fn _p, _a, _ -> {~s({"type":"image","build":"25F80"}), 0} end
     assert {:error, :unterminated} = Sidecar.image_info("latest", runner)
   end
 
   test "non-zero exit dominates a terminal event (spec precedence)" do
-    runner = fn _p, _a, _ -> {~s({"type":"image","version":"26","build":"X","url":"u","source":"s"}\n), 1} end
+    runner = fn _p, _a, _ ->
+      {~s({"type":"image","version":"26","build":"X","url":"u","source":"s"}\n), 1}
+    end
+
     assert {:error, {:exit, 1}} = VzBeam.Sidecar.image_info("latest", runner)
   end
 
@@ -162,7 +181,8 @@ defmodule VzBeam.SidecarTest do
     exit 1
     """)
 
-    assert {:error, {:vz, "VZErrorDomain", 6, "max VMs"}} = Sidecar.stream("restore", @restore_args)
+    assert {:error, {:vz, "VZErrorDomain", 6, "max VMs"}} =
+             Sidecar.stream("restore", @restore_args)
   end
 
   test "priv_vz/1 guards against :code.priv_dir error (no crash, yields nil)" do

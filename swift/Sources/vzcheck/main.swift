@@ -18,12 +18,12 @@ check("args.pair.tag", a.pair("share")?.0 == "tag")
 check("args.pair.path", a.pair("share")?.1 == "/p")
 
 // --- Wire ---
-if let line = Wire.encode(["type": "version", "protocol": 1]) {
+if let line = Wire.encode(["type": "version", "protocol": 2]) {
     check("wire.singleLine", !line.contains("\n"))
     if let data = line.data(using: .utf8),
        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
         check("wire.type", obj["type"] as? String == "version")
-        check("wire.protocol", obj["protocol"] as? Int == 1)
+        check("wire.protocol", obj["protocol"] as? Int == 2)
     } else { check("wire.parse", false) }
 } else { check("wire.encode", false) }
 
@@ -46,10 +46,19 @@ let wrappedF = Wire.errorFields(NSError(domain: "VZErrorDomain", code: 10007,
                                                    NSUnderlyingErrorKey: underlying]))
 check("err.underlying.folds", wrappedF.message.contains("Installation failed.") && wrappedF.message.contains("4014"))
 
-// --- ReID ---
-let (mid, mac) = mintIdentity()
-check("reid.mid.base64", !mid.isEmpty && Data(base64Encoded: mid) != nil)
+// --- GuestOS / ReID ---
+check("guest.macos", (try? GuestOS.parse("macos")) == .macos)
+check("guest.openbsd", (try? GuestOS.parse("openbsd")) == .openbsd)
+check("guest.missing", (try? GuestOS.parse(nil)) == nil)
+check("guest.invalid", (try? GuestOS.parse("linux")) == nil)
+
+let (macMid, mac) = mintIdentity(for: .macos)
+check("reid.macos.base64", !macMid.isEmpty && Data(base64Encoded: macMid) != nil)
 check("reid.mac.format", mac.range(of: #"^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$"#, options: .regularExpression) != nil)
+
+let (genericMid, _) = mintIdentity(for: .openbsd)
+check("reid.openbsd.base64", !genericMid.isEmpty && Data(base64Encoded: genericMid) != nil)
+check("reid.identities.differ", genericMid != macMid)
 
 // --- validateTag (VZVirtioFileSystemDeviceConfiguration) ---
 check("tag.valid", (try? VZVirtioFileSystemDeviceConfiguration.validateTag("share")) != nil)
