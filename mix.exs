@@ -12,7 +12,7 @@ defmodule VzBeam.MixProject do
     ]
   end
 
-  def application, do: [mod: {VzBeam.Application, []}, extra_applications: [:logger]]
+  def application, do: [mod: {VzBeam.Application, []}, extra_applications: [:logger, :crypto]]
 
   defp releases do
     [
