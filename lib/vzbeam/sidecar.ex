@@ -7,6 +7,7 @@ defmodule VzBeam.Sidecar do
   @terminals %{
     "image-info" => ["image"],
     "restore" => ["restored"],
+    "install" => ["installed"],
     "reid" => ["reid"],
     "--version" => ["version"]
   }
@@ -161,6 +162,33 @@ defmodule VzBeam.Sidecar do
          version: m["version"],
          build: m["build"]
        }}
+    end
+  end
+
+  @spec install(map, (Protocol.event() -> any)) :: {:ok, map} | {:error, term}
+  def install(opts, on_event \\ fn _ -> :ok end) do
+    args = [
+      "--guest",
+      "openbsd",
+      "--iso",
+      opts.iso,
+      "--disk",
+      opts.disk,
+      "--nvram",
+      opts.nvram,
+      "--cpu",
+      to_string(opts.cpu),
+      "--mem",
+      to_string(opts.mem),
+      "--resolution",
+      opts.resolution,
+      "--parent-pid",
+      System.pid()
+    ]
+
+    with {:ok, events} <- stream("install", args, on_event),
+         {:event, "installed", m} <- find(events, "installed") do
+      {:ok, %{machine_identifier: m["machineIdentifier"], mac_address: m["macAddress"]}}
     end
   end
 

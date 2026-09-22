@@ -75,6 +75,37 @@ check("run.openbsd.reject.aux", rejectsRun(runBase + ["--guest", "openbsd", "--n
 check("run.openbsd.reject.share", rejectsRun(runBase + ["--guest", "openbsd", "--nvram", "/tmp/nvram.bin",
                                                             "--share", "src", "/tmp"]))
 
+// --- Install parsing ---
+let installArgs = ["--guest", "openbsd", "--iso", "/tmp/install.iso",
+                   "--disk", "/tmp/install-disk.img", "--nvram", "/tmp/install-nvram.bin",
+                   "--cpu", "2", "--mem", "2147483648", "--resolution", "1024x768",
+                   "--parent-pid", String(getpid())]
+if let install = try? parseInstallOpts(installArgs) {
+    check("install.guest", install.guest == .openbsd)
+    check("install.iso", install.iso == "/tmp/install.iso")
+    check("install.disk", install.disk == "/tmp/install-disk.img")
+    check("install.nvram", install.nvram == "/tmp/install-nvram.bin")
+    check("install.dimensions", install.width == 1024 && install.height == 768)
+    check("install.parent", install.parentPID == getpid())
+
+    let installRun = RunOpts(guest: install.guest, machineId: genericMid, hardwareModel: nil,
+                             mac: "5e:11:22:33:44:55", disk: install.disk, aux: nil,
+                             nvram: install.nvram, iso: install.iso, cpu: install.cpu,
+                             mem: install.mem, gui: true, width: install.width,
+                             height: install.height, share: nil, createNVRAM: true)
+    check("install.run.iso", installRun.iso == install.iso)
+    check("install.run.creates-nvram", installRun.createNVRAM)
+} else {
+    check("install.valid", false)
+}
+
+func rejectsInstall(_ args: [String]) -> Bool { (try? parseInstallOpts(args)) == nil }
+check("install.reject.missing-iso", rejectsInstall(installArgs.filter { $0 != "--iso" && $0 != "/tmp/install.iso" }))
+check("install.reject.macos", rejectsInstall(installArgs.map { $0 == "openbsd" ? "macos" : $0 }))
+check("install.reject.missing-nvram", rejectsInstall(installArgs.filter { $0 != "--nvram" && $0 != "/tmp/install-nvram.bin" }))
+check("install.reject.zero-parent", rejectsInstall(installArgs.dropLast(1) + ["0"]))
+check("install.reject.bad-parent", rejectsInstall(installArgs.dropLast(1) + ["not-a-pid"]))
+
 let fm = FileManager.default
 let vmDir = fm.temporaryDirectory.appendingPathComponent("vzcheck-\(UUID().uuidString)", isDirectory: true)
 let diskURL = vmDir.appendingPathComponent("disk.img")

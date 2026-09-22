@@ -33,6 +33,14 @@ defmodule VzBeam.SidecarTest do
   end
 
   @restore_args ~w(--ipsw x --disk d --aux a --disk-size 1 --cpu 1 --mem 1)
+  @install %{
+    iso: "i",
+    disk: "d",
+    nvram: "n",
+    cpu: 2,
+    mem: 2_147_483_648,
+    resolution: "1920x1200"
+  }
 
   test "locate finds the binary via VZBEAM_VZ" do
     assert {:ok, @fake} = Sidecar.locate()
@@ -119,6 +127,25 @@ defmodule VzBeam.SidecarTest do
   test "restore/1 returns the restored identity over the stream transport" do
     assert {:ok, %{machine_identifier: "RID", build: "25F80", version: "26.5.1"}} =
              Sidecar.restore(%{ipsw: "x", disk: "d", aux: "a", disk_size: 1, cpu: 1, mem: 1})
+  end
+
+  test "install streams startup and returns the installed identity" do
+    parent = self()
+
+    assert {:ok, %{machine_identifier: "OID", mac_address: "5e:aa:bb:cc:dd:ee"}} =
+             Sidecar.install(@install, fn event -> send(parent, event) end)
+
+    assert_received {:event, "install_started", %{"pid" => pid}} when is_integer(pid)
+  end
+
+  test "install error dominates a prior success-looking event" do
+    fake_vz_emitting("""
+    echo '{"type":"installed","machineIdentifier":"bad","macAddress":"bad"}'
+    echo '{"type":"error","domain":"vz","code":130,"message":"install cancelled"}'
+    exit 1
+    """)
+
+    assert {:error, {:vz, "vz", 130, "install cancelled"}} = Sidecar.install(@install)
   end
 
   test "stream rejects a malformed line even when a terminal arrives" do
