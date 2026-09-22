@@ -1,6 +1,6 @@
 defmodule VzBeam.Commands.New do
   @moduledoc "new <name> <base> | new <name> --image <latest|PATH|URL|BUILD> — both accept [--cpu N] [--mem-gb M] [--disk-gb G]"
-  alias VzBeam.{Home, Manifest, Pidfile, Cache, Defaults, Disk}
+  alias VzBeam.{Home, Manifest, Pidfile, Cache, Defaults, Disk, GuestPolicy}
 
   @reserved ~w(cache keys bin run.lock)
   @gb 1024 * 1024 * 1024
@@ -61,7 +61,8 @@ defmodule VzBeam.Commands.New do
          :ok <- clear_pending(pending),
          :ok <- cp_rc(Home.bundle_dir(base), pending),
          :ok <- maybe_grow_disk(pending, opts[:disk_gb]),
-         {:ok, ids} <- deps.reid.(),
+         guest = GuestPolicy.guest(base_m),
+         {:ok, ids} <- deps.reid.(guest),
          :ok <- write_manifest(pending, clone_manifest(base_m, name, base, ids, opts)),
          :ok <- File.rename(pending, Home.bundle_dir(name)) do
       {:ok,
@@ -257,7 +258,7 @@ defmodule VzBeam.Commands.New do
 
   defp default_deps,
     do: %{
-      reid: &VzBeam.Sidecar.reid/0,
+      reid: &VzBeam.Sidecar.reid/1,
       ensure: &Cache.ensure/1,
       restore: &VzBeam.Sidecar.restore/2,
       progress: &default_progress/1
