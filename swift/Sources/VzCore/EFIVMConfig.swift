@@ -35,14 +35,20 @@ func buildEFIConfiguration(_ o: RunOpts) throws -> VZVirtualMachineConfiguration
     let isoAttachment = try o.iso.map {
         try VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: $0), readOnly: true)
     }
-    let diskAttachment = try VZDiskImageStorageDeviceAttachment(
-        url: URL(fileURLWithPath: o.disk), readOnly: false)
-
     var storage: [VZStorageDeviceConfiguration] = []
     if let isoAttachment {
         storage.append(VZUSBMassStorageDeviceConfiguration(attachment: isoAttachment))
     }
-    storage.append(VZVirtioBlockDeviceConfiguration(attachment: diskAttachment))
+    if o.recovery {
+        guard #available(macOS 15.0, *) else {
+            throw ConfigError.badField("OpenBSD recovery requires macOS 15 or newer")
+        }
+        cfg.usbControllers = [VZXHCIControllerConfiguration()]
+    } else {
+        let diskAttachment = try VZDiskImageStorageDeviceAttachment(
+            url: URL(fileURLWithPath: o.disk), readOnly: false)
+        storage.append(VZVirtioBlockDeviceConfiguration(attachment: diskAttachment))
+    }
     cfg.storageDevices = storage
 
     let net = VZVirtioNetworkDeviceConfiguration()

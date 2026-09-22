@@ -17,12 +17,13 @@ public struct RunOpts {
     public let height: Int
     public let share: (tag: String, path: String)?
     public let createNVRAM: Bool
+    public let recovery: Bool
 
     public init(guest: GuestOS, machineId: String, hardwareModel: String?,
                 mac: String, disk: String, aux: String?, nvram: String?,
                 iso: String?, cpu: Int, mem: UInt64, gui: Bool,
                 width: Int, height: Int, share: (String, String)?,
-                createNVRAM: Bool) {
+                createNVRAM: Bool, recovery: Bool = false) {
         self.guest = guest
         self.machineId = machineId
         self.hardwareModel = hardwareModel
@@ -38,6 +39,7 @@ public struct RunOpts {
         self.height = height
         self.share = share.map { (tag: $0.0, path: $0.1) }
         self.createNVRAM = createNVRAM
+        self.recovery = recovery
     }
 }
 
