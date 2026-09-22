@@ -1,6 +1,17 @@
 defmodule VzBeam.Commands.New do
-  @moduledoc "new <name> <base> | new <name> --image <latest|PATH|URL|BUILD> — both accept [--cpu N] [--mem-gb M] [--disk-gb G]"
-  alias VzBeam.{Home, Manifest, Pidfile, Cache, Defaults, Disk, GuestPolicy}
+  @moduledoc "Create a clone, restore macOS, or install OpenBSD interactively from an ISO."
+  alias VzBeam.{
+    Home,
+    Manifest,
+    Pidfile,
+    Cache,
+    Defaults,
+    Disk,
+    GuestPolicy,
+    IsoCache,
+    PendingBundle,
+    Resolution
+  }
 
   @reserved ~w(cache keys bin run.lock)
   @gb 1024 * 1024 * 1024
@@ -10,30 +21,85 @@ defmodule VzBeam.Commands.New do
   def run(args, deps) do
     {opts, positional, invalid} =
       OptionParser.parse(args,
-        strict: [image: :string, cpu: :integer, mem_gb: :integer, disk_gb: :integer]
+        strict: [
+          image: :string,
+          iso: :string,
+          cpu: :integer,
+          mem_gb: :integer,
+          disk_gb: :integer,
+          ssh_user: :string,
+          resolution: :string
+        ]
       )
 
     if invalid != [] do
       {:error, 2, "new: unknown option\n"}
     else
-      with :ok <- validate_sizing(opts) do
-        case {positional, opts[:image]} do
-          {[name, base], nil} ->
-            clone(name, base, opts, deps)
+      with :ok <- validate_sizing(opts),
+           :ok <- validate_ssh_user_option(opts[:ssh_user]),
+           :ok <- validate_resolution(opts[:resolution]) do
+        case {positional, opts[:image], opts[:iso]} do
+          {[name, base], nil, nil} ->
+            with :ok <- reject_iso_only_options(opts) do
+              clone(name, base, opts, deps)
+            else
+              input -> input_error(input)
+            end
 
-          {[name], img} when is_binary(img) ->
-            restore(name, img, opts, deps)
+          {[name], image, nil} when is_binary(image) ->
+            with :ok <- reject_iso_only_options(opts) do
+              restore(name, image, opts, deps)
+            else
+              input -> input_error(input)
+            end
 
-          {[_, _], img} when is_binary(img) ->
+          {[name], nil, iso} when is_binary(iso) ->
+            install_openbsd(name, iso, opts, deps)
+
+          {_, image, iso} when is_binary(image) and is_binary(iso) ->
+            {:error, 2, "new: --image and --iso are mutually exclusive\n"}
+
+          {[_, _], nil, iso} when is_binary(iso) ->
+            {:error, 2, "new: --iso is mutually exclusive with a base\n"}
+
+          {[_, _], image, nil} when is_binary(image) ->
             {:error, 2, "new: --image is mutually exclusive with a base\n"}
 
           _ ->
-            {:error, 2,
-             "usage: vzbeam new <name> <base> | new <name> --image <latest|PATH|URL|BUILD>\n"}
+            usage()
         end
       else
-        err -> sizing_error(err)
+        input -> input_error(input)
       end
+    end
+  end
+
+  defp usage do
+    {:error, 2,
+     "usage: vzbeam new <name> <base> | new <name> --image <latest|PATH|URL|BUILD> | new <name> --iso PATH\n"}
+  end
+
+  defp reject_iso_only_options(opts) do
+    if opts[:ssh_user] || opts[:resolution],
+      do: {:error, :iso_only_option},
+      else: :ok
+  end
+
+  defp validate_ssh_user_option(nil), do: :ok
+  defp validate_ssh_user_option(user), do: validate_ssh_user(user)
+
+  defp validate_ssh_user(user) do
+    if Regex.match?(~r/\A[a-z_][a-z0-9_-]{0,30}\z/, user) and user != "root",
+      do: :ok,
+      else: {:error, :bad_ssh_user}
+  end
+
+  defp validate_resolution(nil), do: :ok
+
+  defp validate_resolution(value) do
+    case Resolution.parse(value) do
+      {:ok, _} -> :ok
+      {:error, _} = error -> error
     end
   end
 
@@ -46,31 +112,46 @@ defmodule VzBeam.Commands.New do
     end
   end
 
-  defp sizing_error({:error, :bad_cpu}), do: {:error, 2, "new: --cpu must be >= 1\n"}
-  defp sizing_error({:error, :bad_mem}), do: {:error, 2, "new: --mem-gb must be >= 1\n"}
-  defp sizing_error({:error, :bad_disk}), do: {:error, 2, "new: --disk-gb must be >= 1\n"}
+  defp input_error({:error, :bad_cpu}), do: {:error, 2, "new: --cpu must be >= 1\n"}
+  defp input_error({:error, :bad_mem}), do: {:error, 2, "new: --mem-gb must be >= 1\n"}
+  defp input_error({:error, :bad_disk}), do: {:error, 2, "new: --disk-gb must be >= 1\n"}
+  defp input_error({:error, :bad_ssh_user}), do: {:error, 2, "new: invalid --ssh-user\n"}
+  defp input_error({:error, :bad_resolution}), do: {:error, 2, "new: invalid --resolution\n"}
+
+  defp input_error({:error, :iso_only_option}),
+    do: {:error, 2, "new: --ssh-user and --resolution require --iso\n"}
 
   # --- clone ---------------------------------------------------------------
   defp clone(name, base, opts, deps) do
-    pending = Home.bundle_dir(name) <> ".pending"
-
     with :ok <- validate_name(name),
          {:ok, base_m} <- Manifest.read_or(base, :no_such_base),
          :ok <- refute_running(base),
          :ok <- refute_exists(name),
-         :ok <- clear_pending(pending),
-         :ok <- cp_rc(Home.bundle_dir(base), pending),
-         :ok <- maybe_grow_disk(pending, opts[:disk_gb]),
-         guest = GuestPolicy.guest(base_m),
-         {:ok, ids} <- deps.reid.(guest),
-         :ok <- write_manifest(pending, clone_manifest(base_m, name, base, ids, opts)),
-         :ok <- File.rename(pending, Home.bundle_dir(name)) do
-      {:ok,
-       ["created ", name, " (clone of ", base, override_note(opts), ")\n" | clone_disk_note(opts)]}
+         {:ok, claim} <- claim_pending(name, deps) do
+      complete_claim(claim, deps, fn ->
+        with :ok <- copy_bundle_contents(Home.bundle_dir(base), claim.path),
+             :ok <- maybe_grow_disk(claim.path, opts[:disk_gb]),
+             guest = GuestPolicy.guest(base_m),
+             {:ok, ids} <- deps.reid.(guest),
+             :ok <-
+               write_manifest(
+                 claim.path,
+                 clone_manifest(base_m, name, base, ids, opts)
+               ) do
+          {:ok,
+           [
+             "created ",
+             name,
+             " (clone of ",
+             base,
+             override_note(opts),
+             ")\n"
+             | clone_disk_note(opts)
+           ]}
+        end
+      end)
     else
-      err ->
-        File.rm_rf(pending)
-        error(err)
+      err -> error(err)
     end
   end
 
@@ -121,7 +202,6 @@ defmodule VzBeam.Commands.New do
 
   # --- restore -------------------------------------------------------------
   defp restore(name, spec, opts, deps) do
-    pending = Home.bundle_dir(name) <> ".pending"
     disk_bytes = Defaults.resolve(opts[:disk_gb], :disk_gb) * @gb
     cpu = Defaults.resolve(opts[:cpu], :cpu)
     mem_bytes = Defaults.resolve(opts[:mem_gb], :mem_gb) * @gb
@@ -130,33 +210,36 @@ defmodule VzBeam.Commands.New do
          :ok <- refute_exists(name),
          {:ok, status, entry} <- deps.ensure.(spec),
          :ok <- announce_image(deps, status, entry),
-         :ok <- clear_pending(pending),
-         :ok <- File.mkdir_p(pending),
-         :ok <- Disk.create_sparse(Path.join(pending, "disk.img"), disk_bytes),
-         {:ok, r} <-
-           deps.restore.(
-             %{
-               ipsw: Path.join(Cache.dir(), entry["file"]),
-               disk: Path.join(pending, "disk.img"),
-               aux: Path.join(pending, "aux.img"),
-               disk_size: disk_bytes,
-               cpu: cpu,
-               mem: mem_bytes
-             },
-             restore_reporter(deps)
-           ),
-         :ok <- write_manifest(pending, restore_manifest(name, entry, r, cpu, mem_bytes)),
-         :ok <- File.rename(pending, Home.bundle_dir(name)) do
-      {:ok,
-       [
-         "created ",
-         name,
-         " (cpu=#{cpu} mem=#{div(mem_bytes, @gb)}G disk=#{div(disk_bytes, @gb)}G)\n"
-       ]}
+         {:ok, claim} <- claim_pending(name, deps) do
+      complete_claim(claim, deps, fn ->
+        with :ok <- Disk.create_sparse(Path.join(claim.path, "disk.img"), disk_bytes),
+             {:ok, r} <-
+               deps.restore.(
+                 %{
+                   ipsw: Path.join(Cache.dir(), entry["file"]),
+                   disk: Path.join(claim.path, "disk.img"),
+                   aux: Path.join(claim.path, "aux.img"),
+                   disk_size: disk_bytes,
+                   cpu: cpu,
+                   mem: mem_bytes
+                 },
+                 restore_reporter(deps)
+               ),
+             :ok <-
+               write_manifest(
+                 claim.path,
+                 restore_manifest(name, entry, r, cpu, mem_bytes)
+               ) do
+          {:ok,
+           [
+             "created ",
+             name,
+             " (cpu=#{cpu} mem=#{div(mem_bytes, @gb)}G disk=#{div(disk_bytes, @gb)}G)\n"
+           ]}
+        end
+      end)
     else
-      err ->
-        File.rm_rf(pending)
-        error(err)
+      err -> error(err)
     end
   end
 
@@ -178,6 +261,108 @@ defmodule VzBeam.Commands.New do
       "memoryBytes" => mem_bytes,
       "createdAt" => now()
     }
+  end
+
+  # --- interactive OpenBSD install ----------------------------------------
+  defp install_openbsd(name, spec, opts, deps) do
+    disk_bytes = Defaults.resolve(opts[:disk_gb], :disk_gb) * @gb
+    cpu = Defaults.resolve(opts[:cpu], :cpu)
+    mem_bytes = Defaults.resolve(opts[:mem_gb], :mem_gb) * @gb
+    ssh_user = Defaults.resolve(opts[:ssh_user], :ssh_user)
+    resolution = Defaults.resolve(opts[:resolution], :resolution)
+
+    with :ok <- validate_name(name),
+         :ok <- refute_exists(name),
+         {:ok, status, entry} <- deps.ensure_iso.(spec),
+         :ok <- announce_iso(deps, status, entry),
+         :ok <- announce_openbsd_instructions(deps, ssh_user),
+         {:ok, claim} <- claim_pending(name, deps) do
+      complete_claim(claim, deps, fn ->
+        disk = Path.join(claim.path, "disk.img")
+        nvram = Path.join(claim.path, "nvram.bin")
+
+        with :ok <- Disk.create_sparse(disk, disk_bytes),
+             {:ok, result} <-
+               deps.install.(
+                 %{
+                   iso: Path.join(IsoCache.dir(), entry["file"]),
+                   disk: disk,
+                   nvram: nvram,
+                   cpu: cpu,
+                   mem: mem_bytes,
+                   resolution: resolution
+                 },
+                 install_reporter(deps)
+               ),
+             :ok <- require_file(nvram, :missing_nvram),
+             :ok <-
+               write_manifest(
+                 claim.path,
+                 openbsd_manifest(
+                   name,
+                   entry,
+                   result,
+                   ssh_user,
+                   cpu,
+                   mem_bytes
+                 )
+               ) do
+          {:ok,
+           [
+             "created ",
+             name,
+             " (OpenBSD #{entry["version"] || "ISO"}; cpu=#{cpu} mem=#{div(mem_bytes, @gb)}G disk=#{div(disk_bytes, @gb)}G)\n"
+           ]}
+        end
+      end)
+    else
+      err -> error(err)
+    end
+  end
+
+  defp openbsd_manifest(name, entry, result, ssh_user, cpu, mem_bytes) do
+    %{
+      "schemaVersion" => 2,
+      "guestOS" => "openbsd",
+      "name" => name,
+      "base" => nil,
+      "image" => entry,
+      "machineIdentifier" => result.machine_identifier,
+      "macAddress" => result.mac_address,
+      "sshUser" => ssh_user,
+      "cpuCount" => cpu,
+      "memoryBytes" => mem_bytes,
+      "createdAt" => now()
+    }
+  end
+
+  defp announce_iso(deps, status, entry) do
+    verb = if status == :fetched, do: "retained", else: "using cached"
+    deps.progress.([verb, " ISO ", entry["file"], "\n"])
+    :ok
+  end
+
+  defp announce_openbsd_instructions(deps, ssh_user) do
+    deps.progress.([
+      "OpenBSD installer: create the user `",
+      ssh_user,
+      "`, enable sshd, and finish with `halt -p`.\n",
+      "The bundle is promoted only after the installer VM powers off.\n"
+    ])
+
+    :ok
+  end
+
+  defp install_reporter(deps) do
+    fn
+      {:event, "install_started", _} -> deps.progress.("OpenBSD installer started.\n")
+      {:event, "installed", _} -> deps.progress.("OpenBSD installer stopped; finalizing.\n")
+      _ -> :ok
+    end
+  end
+
+  defp require_file(path, reason) do
+    if File.regular?(path), do: :ok, else: {:error, reason}
   end
 
   # --- progress feedback ---------------------------------------------------
@@ -211,6 +396,7 @@ defmodule VzBeam.Commands.New do
   # --- helpers -------------------------------------------------------------
   defp validate_name(n) do
     cond do
+      String.ends_with?(n, ".pending") -> {:error, :pending_name}
       n in @reserved -> {:error, :reserved_name}
       n == "" or n in [".", ".."] or String.contains?(n, ["/", "\\"]) -> {:error, :bad_name}
       true -> :ok
@@ -221,6 +407,49 @@ defmodule VzBeam.Commands.New do
     do: if(Pidfile.running?(base), do: {:error, :base_running}, else: :ok)
 
   defp refute_exists(name), do: if(Home.exists?(name), do: {:error, :exists}, else: :ok)
+
+  defp claim_pending(name, deps) do
+    case deps.claim_pending.(name) do
+      {:error, :pending_owner_unreadable} ->
+        {:error, {:pending_owner_unreadable, name}}
+
+      result ->
+        result
+    end
+  end
+
+  defp complete_claim(claim, deps, work) do
+    case work.() do
+      {:ok, output} ->
+        case deps.promote_pending.(claim) do
+          :ok -> {:ok, output}
+          {:error, _} = promote_error -> cleanup_after_error(claim, deps, promote_error)
+        end
+
+      {:error, _} = work_error ->
+        cleanup_after_error(claim, deps, work_error)
+    end
+  end
+
+  defp cleanup_after_error(claim, deps, original_error) do
+    case deps.cleanup_pending.(claim) do
+      :ok -> error(original_error)
+      {:error, _} = cleanup_error -> error(cleanup_error)
+    end
+  end
+
+  defp copy_bundle_contents(base_dir, pending_dir) do
+    with {:ok, entries} <- File.ls(base_dir) do
+      entries
+      |> Enum.reject(&(&1 == "install-owner.json"))
+      |> Enum.reduce_while(:ok, fn entry, :ok ->
+        case cp_rc(Path.join(base_dir, entry), pending_dir) do
+          :ok -> {:cont, :ok}
+          error -> {:halt, error}
+        end
+      end)
+    end
+  end
 
   defp cp_rc(src, dst) do
     case System.cmd("cp", ["-Rc", src, dst], stderr_to_stdout: true) do
@@ -235,20 +464,49 @@ defmodule VzBeam.Commands.New do
 
   defp now, do: DateTime.utc_now() |> DateTime.to_iso8601()
 
-  defp clear_pending(pending) do
-    case File.rm_rf(pending) do
-      {:ok, _} -> :ok
-      {:error, reason, _file} -> {:error, {:pending_cleanup, reason}}
-    end
-  end
-
   defp error({:error, :reserved_name}), do: {:error, 1, "new: name is reserved\n"}
+
+  defp error({:error, :pending_name}),
+    do: {:error, 2, "new: names ending in .pending are reserved\n"}
+
   defp error({:error, :bad_name}), do: {:error, 1, "new: invalid name\n"}
   defp error({:error, :no_such_base}), do: {:error, 1, "new: no such base\n"}
   defp error({:error, :base_running}), do: {:error, 1, "new: base is running; stop it first\n"}
   defp error({:error, :exists}), do: {:error, 1, "new: bundle already exists\n"}
 
-  defp error({:error, {:pending_cleanup, _}}),
+  defp error({:error, :creation_in_progress}),
+    do: {:error, 1, "new: creation already in progress\n"}
+
+  defp error({:error, {:pending_owner_unreadable, name}}) do
+    path = Home.bundle_dir(name) <> ".pending"
+
+    {:error, 1,
+     [
+       "new: ",
+       path,
+       " has no readable install owner; verify no old `vzbeam new` is running before removing it\n"
+     ]}
+  end
+
+  defp error({:error, :owner_mismatch}),
+    do: {:error, 1, "new: pending bundle ownership changed; refusing to modify it\n"}
+
+  defp error({:error, :lock_timeout}),
+    do: {:error, 1, "new: another vzbeam operation holds the host lock; retry\n"}
+
+  defp error({:error, :lock_corrupt}),
+    do: {:error, 1, "new: the host lock is unreadable; inspect it before retrying\n"}
+
+  defp error({:error, {:vz, _domain, 130, message}}),
+    do: {:error, 1, ["new: ", message, "\n"]}
+
+  defp error({:error, {:vz, _domain, _code, message}}),
+    do: {:error, 1, ["new: ", message, "\n"]}
+
+  defp error({:error, :missing_nvram}),
+    do: {:error, 1, "new: installer did not create nvram.bin\n"}
+
+  defp error({:error, {:pending_cleanup, _file, _reason}}),
     do: {:error, 1, "new: could not clear a stale .pending dir\n"}
 
   defp error({:error, {:shrink, have}}),
@@ -261,6 +519,11 @@ defmodule VzBeam.Commands.New do
       reid: &VzBeam.Sidecar.reid/1,
       ensure: &Cache.ensure/1,
       restore: &VzBeam.Sidecar.restore/2,
+      ensure_iso: &IsoCache.ensure/1,
+      install: &VzBeam.Sidecar.install/2,
+      claim_pending: &PendingBundle.claim/1,
+      cleanup_pending: &PendingBundle.cleanup/1,
+      promote_pending: &PendingBundle.promote/1,
       progress: &default_progress/1
     }
 end

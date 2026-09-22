@@ -32,6 +32,7 @@ defmodule VzBeam.HomeTest do
     File.write!(Path.join([home, "half.pending", "config.json"]), "{}")
     System.put_env("VZBEAM_HOME", home)
     assert VzBeam.Home.bundles() == ["base"]
+    refute VzBeam.Home.exists?("half.pending")
   after
     System.delete_env("VZBEAM_HOME")
   end
