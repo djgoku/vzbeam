@@ -5,14 +5,27 @@ defmodule VzBeam.Commands.RmTest do
     home = Path.join(System.tmp_dir!(), "vzbeam-#{System.unique_integer([:positive])}")
     System.put_env("VZBEAM_HOME", home)
     File.mkdir_p!(Path.join(home, "dev"))
-    File.write!(Path.join([home, "dev", "config.json"]), "{}")
-    on_exit(fn -> System.delete_env("VZBEAM_HOME"); File.rm_rf!(home) end)
+
+    File.write!(
+      Path.join([home, "dev", "config.json"]),
+      Jason.encode!(%{"schemaVersion" => 2, "guestOS" => "openbsd", "name" => "dev"})
+    )
+
+    on_exit(fn ->
+      System.delete_env("VZBEAM_HOME")
+      File.rm_rf!(home)
+    end)
+
     {:ok, home: home}
   end
 
   test "removes a stopped bundle", %{home: home} do
+    iso = Path.join([home, "cache", "iso", "abc.iso"])
+    File.mkdir_p!(Path.dirname(iso))
+    File.write!(iso, "cached")
     assert {:ok, _} = VzBeam.Commands.Rm.run(["dev"])
     refute File.exists?(Path.join(home, "dev"))
+    assert File.read!(iso) == "cached"
   end
 
   test "refuses a running bundle" do

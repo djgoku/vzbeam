@@ -1,6 +1,6 @@
 defmodule VzBeam.Commands.Ls do
   @moduledoc "ls — table of bundles."
-  alias VzBeam.{Home, Manifest, Pidfile, Leases, Disk}
+  alias VzBeam.{Home, Manifest, Pidfile, Leases, Disk, GuestPolicy}
 
   @header ["NAME", "STATUS", "BASE", "OS", "IP", "CPU", "MEM", "DISK"]
 
@@ -15,22 +15,47 @@ defmodule VzBeam.Commands.Ls do
   end
 
   defp row(name, leases) do
-    m = case Manifest.read(name), do: ({:ok, map} -> map; _ -> %{})
-    img = Map.get(m, "image") || %{}
+    case Manifest.read(name) do
+      {:ok, manifest} -> valid_row(name, manifest, leases)
+      {:error, reason} -> invalid_row(name, reason)
+    end
+  end
+
+  defp valid_row(name, manifest, leases) do
     [
       name,
       if(Pidfile.running?(name), do: "running", else: "stopped"),
-      m["base"] || "-",
-      os(img),
-      ip(m, leases),
-      to_string(m["cpuCount"] || "-"),
-      mem(m["memoryBytes"]),
+      manifest["base"] || "-",
+      GuestPolicy.os_label(manifest, manifest["image"] || %{}),
+      ip(manifest, leases),
+      to_string(manifest["cpuCount"] || "-"),
+      mem(manifest["memoryBytes"]),
       Disk.gb(Disk.size(Path.join(Home.bundle_dir(name), "disk.img")))
     ]
   end
 
-  defp os(%{"version" => v, "build" => b}), do: "#{v} (#{b})"
-  defp os(_), do: "-"
+  defp invalid_row(name, reason) do
+    [
+      name,
+      if(Pidfile.running?(name), do: "running", else: "stopped"),
+      "-",
+      describe_manifest_error(reason),
+      "-",
+      "-",
+      "-",
+      Disk.gb(Disk.size(Path.join(Home.bundle_dir(name), "disk.img")))
+    ]
+  end
+
+  defp describe_manifest_error(:invalid_manifest), do: Manifest.describe_error(:invalid_manifest)
+
+  defp describe_manifest_error({:unsupported_schema, _} = reason),
+    do: Manifest.describe_error(reason)
+
+  defp describe_manifest_error({:unsupported_guest, _} = reason),
+    do: Manifest.describe_error(reason)
+
+  defp describe_manifest_error(reason), do: inspect(reason)
 
   defp ip(%{"macAddress" => mac}, leases) when is_binary(mac),
     do: Leases.lookup_ip(leases, mac) || "-"

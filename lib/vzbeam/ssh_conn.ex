@@ -1,12 +1,24 @@
 defmodule VzBeam.SshConn do
   @moduledoc "Shared SSH connection helpers: option args + lease IP resolution."
-  alias VzBeam.{Keys, Leases, Defaults}
+  alias VzBeam.{Keys, Leases}
 
-  @spec args(String.t()) :: [String.t()]
-  def args(ip) do
-    ["-i", Keys.private(), "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
-     "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=5",
-     "#{Defaults.values().ssh_user}@#{ip}"]
+  @spec args(String.t(), String.t()) :: [String.t()]
+  def args(ip, user) do
+    [
+      "-i",
+      Keys.private(),
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "StrictHostKeyChecking=no",
+      "-o",
+      "UserKnownHostsFile=/dev/null",
+      "-o",
+      "LogLevel=ERROR",
+      "-o",
+      "ConnectTimeout=5",
+      "#{user}@#{ip}"
+    ]
   end
 
   @spec resolve_ip(map, String.t()) :: {:ok, String.t()} | {:error, :no_lease}

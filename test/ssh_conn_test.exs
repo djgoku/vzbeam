@@ -7,15 +7,20 @@ defmodule VzBeam.SshConnTest do
   setup do
     home = Path.join(System.tmp_dir!(), "vzbeam-sshconn-#{System.unique_integer([:positive])}")
     System.put_env("VZBEAM_HOME", home)
-    on_exit(fn -> System.delete_env("VZBEAM_HOME"); File.rm_rf!(home) end)
+
+    on_exit(fn ->
+      System.delete_env("VZBEAM_HOME")
+      File.rm_rf!(home)
+    end)
+
     :ok
   end
 
-  test "args/1 includes BatchMode=yes, the private key, and admin@ip" do
-    args = SshConn.args("192.168.64.5")
+  test "args/2 includes BatchMode=yes, the private key, and the stored user@ip" do
+    args = SshConn.args("192.168.64.5", "deploy")
     joined = Enum.join(args, " ")
     assert joined =~ "BatchMode=yes"
-    assert joined =~ "admin@192.168.64.5"
+    assert joined =~ "deploy@192.168.64.5"
     # private key arg is present
     key = VzBeam.Keys.private()
     assert Enum.member?(args, key)
