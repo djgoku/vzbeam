@@ -1,7 +1,8 @@
 # vzbeam
 
-Clean, disposable **macOS** VMs on Apple Silicon for testing, CI, and sandboxing. Restore an
-image, clone it instantly (copy-on-write), run it GUI or headless, SSH in, then tear it down —
+Clean, disposable **macOS and OpenBSD** VMs on Apple Silicon for testing, CI, and
+sandboxing. Restore macOS from an IPSW or install OpenBSD interactively from a local ISO,
+clone a guest instantly (copy-on-write), run it GUI or headless, SSH in, then tear it down —
 all on Apple's **Virtualization.framework**, with no third-party runtime and no paid Apple
 Developer account.
 
@@ -17,18 +18,21 @@ The full CLI, backed by the Swift `vz` sidecar:
 - `ls` / `ip` / `images` — inspect bundles, IPs, restore images (cached `local` + Apple-offered
   `remote`, straight from Apple's IPSW catalog — no third-party services)
 - `fetch <spec>` — download + cache a restore image
-- `new <name> --image <spec>` (restore) · `new <name> <base>` (CoW clone) · `rm` — `new` accepts
-  `--cpu N`, `--mem-gb M`, `--disk-gb G` (a clone's disk can only grow past its base)
+- `new <name> --image <spec>` (macOS restore) · `new <name> --iso PATH` (interactive OpenBSD
+  install) · `new <name> <base>` (CoW clone) · `rm` — `new` accepts `--cpu N`, `--mem-gb M`,
+  `--disk-gb G` (a clone's disk can only grow past its base)
 - `set <name> [--cpu N] [--mem-gb M] [--disk-gb G]` — resize a stopped VM (the disk only grows)
 
-Disk-sizing caveat: growing an *existing* VM (`set --disk-gb`, or a clone's `--disk-gb`) cannot
-extend the guest's root volume — macOS keeps the SIP-protected recoveryOS partition right behind
-it, so the added space is only usable as a new APFS volume inside the guest. For a full-size root
-volume, pass `--disk-gb` on a fresh `new --image` restore, where the installer partitions the
-whole disk — or, for disposable VMs, see the experimental host-side procedure in
-[docs/disk-grow.md](docs/disk-grow.md) (deletes the guest's recoveryOS to let the root grow).
-- `run <name> [--gui|--headless] [--share <tag>=/host/path]` · `stop` · `kill` · `ssh <name> [-- cmd]`
-  — see [Sharing a host folder](#sharing-a-host-folder)
+Disk-sizing caveat: growing an *existing* macOS VM (`set --disk-gb`, or a clone's
+`--disk-gb`) cannot extend the guest's root volume — macOS keeps the SIP-protected recoveryOS
+partition right behind it, so the added space is only usable as a new APFS volume inside the
+guest. For a full-size root volume, pass `--disk-gb` on a fresh `new --image` restore, where the
+installer partitions the whole disk — or, for disposable VMs, see the experimental host-side
+procedure in [docs/disk-grow.md](docs/disk-grow.md). OpenBSD growth leaves unallocated guest
+space to partition and grow with guest-side tools.
+- `run <name> [--gui|--headless] [--share <tag>=/host/path] [--iso [PATH]]` · `stop` · `kill` ·
+  `ssh <name> [-- cmd]` — `--iso` is OpenBSD recovery; see
+  [OpenBSD guests](docs/openbsd.md) and [Sharing a host folder](#sharing-a-host-folder)
 - `mix vz.build` — compile + ad-hoc-sign the Swift sidecar into `$VZBEAM_HOME/bin/vz`
 - `MIX_ENV=prod mix release` — package the CLI + the signed sidecar into one self-contained binary (Burrito; no Erlang/Elixir/Swift on the target — see *Packaging* below)
 
@@ -41,7 +45,10 @@ An image `<spec>` (for `fetch` and `new --image`) is one of:
 - a cached **build id** from `vzbeam images` (e.g. `26A5368g`, case-insensitive) — reused straight
   from the cache, no download
 
-All four resolve to a cached image keyed by its build, so the disk is never duplicated.
+All four resolve to the macOS IPSW cache, keyed by build, so the disk is never duplicated.
+OpenBSD uses a separate content-addressed ISO cache under `$VZBEAM_HOME/cache/iso`; `new --iso`
+retains the local installer by SHA256 digest, while `run --iso PATH` is a one-shot attachment and
+is not cached.
 
 ## Build, test, run
 
@@ -132,7 +139,24 @@ to a project).
 Release candidates (`X.Y.Z-rc.N`) are GitHub prereleases: neither route picks one for `latest`,
 but either installs it by exact version.
 
-## First boot (one-time per base)
+## OpenBSD quick start
+
+Use an official OpenBSD 7.9+ ARM64 ISO that you have verified against OpenBSD's signed release
+manifest. Installation is local-only and interactive:
+
+```sh
+vzbeam new obsd --iso /path/install79.iso   # create admin, enable sshd, finish with halt -p
+vzbeam run obsd --gui                       # first normal boot; no ISO is attached
+vzbeam run obsd --iso                       # cached installer ISO for one recovery run
+vzbeam run obsd --iso /path/alternate.iso   # one-shot recovery media, not cached
+```
+
+Both recovery forms imply `--gui`, reject `--headless`, attach the ISO read-only, and leave it
+detached on the next normal run. The OpenBSD `--share` path is not supported. See
+[docs/openbsd.md](docs/openbsd.md) for SSH key setup, the narrow `doas` shutdown rule, disk
+growth, media verification, and the physical-hardware validation boundary.
+
+## First macOS boot (one-time per base)
 
 A freshly restored base is unconfigured, so the **first** `run` must be `--gui` to complete macOS
 Setup Assistant:
@@ -191,16 +215,21 @@ Three limits worth knowing:
 
 ## A note on validation
 
-`mix test` is the validation entry point for everything implemented so far. It does **not** — and cannot — validate the VM-booting paths (`install` / `run`):
-Apple's Virtualization.framework does not support running a macOS guest inside a macOS guest, so a
-*virtualized* dev box can't boot guests at all. Those paths are validated on **bare-metal Apple
-Silicon** via a separate, hardware-gated suite: restore, boot + `--gui`, CoW clone, headless
-networking + `ssh`, virtiofs `--share`, `kill`, the 2-VM cap (the engine pre-check and the framework's
-authoritative `VZError 6`), and the packaged single-file binary booting a guest from its **bundled**
-sidecar. See the design spec §13 / §15 and the hardware-suite results in `docs/superpowers/results/`.
-A green `mix test` means the engine is sound, not that the VM lifecycle has been exercised.
+`mix test` validates CLI parsing, manifests, caching, lifecycle policy, sidecar arguments, and
+cleanup. The signed native `vzcheck` additionally asks Virtualization.framework to validate the
+macOS and generic-EFI configurations without starting a guest. Its OpenBSD coverage includes the
+generic EFI platform and variable store, VirtIO block and network devices, graphics/input, and
+read-only optical-media attachment.
+
+Those checks do **not** validate an actual install or boot. A virtualized development Mac cannot
+exercise the guest lifecycle, so the physical **Apple Silicon** gate separately covers macOS
+restore/boot/share and OpenBSD interactive install, normal boot, networking/SSH, graceful stop,
+clone, disk growth, and cached plus one-shot recovery. A green non-booting suite means the engine
+and framework configurations are sound; it is not evidence that a particular ISO booted or that
+EFI selected its recovery media. Hardware results live in `docs/superpowers/results/`.
 
 ## Docs
 
+- OpenBSD install, recovery, and operation: [docs/openbsd.md](docs/openbsd.md)
 - Design spec: `docs/superpowers/specs/2026-06-21-vzbeam-design.md`
 - Implementation plans: `docs/superpowers/plans/`
