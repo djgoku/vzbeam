@@ -8,18 +8,47 @@ private var liveRun: RunSession?
 
 public func runRun(_ args: [String]) {
     if setsid() == -1 { Wire.log("vz: setsid failed: \(String(cString: strerror(errno)))") }  // in-process, no fork: getpid() stays == the launch pid the engine captured
+    let opts: RunOpts
+    do { opts = try parseRunOpts(args) }
+    catch {
+        let fields = Wire.errorFields(error)
+        Wire.emitError(domain: fields.domain, code: fields.code, "run: \(fields.message)")
+        exit(2)
+    }
+    liveRun = RunSession(opts: opts)
+    liveRun?.start()
+}
+
+public func parseRunOpts(_ args: [String]) throws -> RunOpts {
     let a = Args(args, booleanFlags: ["gui", "headless"], pairFlags: ["share"])
-    guard let mid = a.value("machine-id"), let hw = a.value("hardware-model"), let mac = a.value("mac"),
-          let disk = a.value("disk"), let aux = a.value("aux"),
+    let guest = try GuestOS.parse(a.value("guest"))
+    guard let mid = a.value("machine-id"), let mac = a.value("mac"),
+          let disk = a.value("disk"),
           let cpu = a.value("cpu").flatMap(Int.init), let mem = a.value("mem").flatMap(UInt64.init) else {
-        Wire.emitError(domain: "vz", code: 2, "run: missing required flags"); exit(2)
+        throw ConfigError.badField("required flags")
     }
     let (w, h) = parseResolution(a.value("resolution") ?? "1920x1200")
     let share = a.pair("share").map { (tag: $0.0, path: $0.1) }
-    let opts = RunOpts(machineId: mid, hardwareModel: hw, mac: mac, disk: disk, aux: aux,
-                       cpu: cpu, mem: mem, gui: a.has("gui"), width: w, height: h, share: share)
-    liveRun = RunSession(opts: opts)
-    liveRun?.start()
+    let hardwareModel = a.value("hardware-model")
+    let aux = a.value("aux")
+    let nvram = a.value("nvram")
+    let iso = a.value("iso")
+
+    switch guest {
+    case .macos:
+        guard hardwareModel != nil, aux != nil, nvram == nil, iso == nil else {
+            throw ConfigError.badField("macos options")
+        }
+    case .openbsd:
+        guard nvram != nil, hardwareModel == nil, aux == nil, share == nil else {
+            throw ConfigError.badField("openbsd options")
+        }
+    }
+
+    return RunOpts(guest: guest, machineId: mid, hardwareModel: hardwareModel,
+                   mac: mac, disk: disk, aux: aux, nvram: nvram, iso: iso,
+                   cpu: cpu, mem: mem, gui: a.has("gui"), width: w, height: h,
+                   share: share, createNVRAM: false)
 }
 
 private func parseResolution(_ s: String) -> (Int, Int) {

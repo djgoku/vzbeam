@@ -10,7 +10,9 @@ defmodule VzBeam.Commands.Run do
 
   def run(args, deps) do
     {opts, positional, invalid} =
-      OptionParser.parse(args, strict: [gui: :boolean, headless: :boolean, resolution: :string, share: :string])
+      OptionParser.parse(args,
+        strict: [gui: :boolean, headless: :boolean, resolution: :string, share: :string]
+      )
 
     cond do
       invalid != [] ->
@@ -21,8 +23,12 @@ defmodule VzBeam.Commands.Run do
 
       true ->
         case positional do
-          [name] -> start(name, opts, deps)
-          _ -> {:error, 2, "usage: vzbeam run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]\n"}
+          [name] ->
+            start(name, opts, deps)
+
+          _ ->
+            {:error, 2,
+             "usage: vzbeam run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]\n"}
         end
     end
   end
@@ -80,9 +86,19 @@ defmodule VzBeam.Commands.Run do
   defp finish(name, pid, run_log, gui) do
     case await_started(run_log, pid, @handshake_ms) do
       {:ok, _} ->
-        {:ok, ["started ", name, " (pid ", Integer.to_string(pid),
-               ") - networking; try `vzbeam ip ", name, "` or `vzbeam ssh ", name, "`\n",
-               gui_hint(name, gui)]}
+        {:ok,
+         [
+           "started ",
+           name,
+           " (pid ",
+           Integer.to_string(pid),
+           ") - networking; try `vzbeam ip ",
+           name,
+           "` or `vzbeam ssh ",
+           name,
+           "`\n",
+           gui_hint(name, gui)
+         ]}
 
       {:error, _reason} = err ->
         cleanup(name, pid)
@@ -136,13 +152,16 @@ defmodule VzBeam.Commands.Run do
   end
 
   defp read_events(run_log) do
-    body = case File.read(run_log) do
-      {:ok, b} -> b
-      _ -> ""
-    end
+    body =
+      case File.read(run_log) do
+        {:ok, b} -> b
+        _ -> ""
+      end
 
     lines = String.split(body, "\n")
-    complete = if body == "" or String.ends_with?(body, "\n"), do: lines, else: Enum.drop(lines, -1)
+
+    complete =
+      if body == "" or String.ends_with?(body, "\n"), do: lines, else: Enum.drop(lines, -1)
 
     complete
     |> Enum.reject(&(&1 == ""))
@@ -152,7 +171,8 @@ defmodule VzBeam.Commands.Run do
 
   defp started?(events), do: Enum.any?(events, &match?({:event, "started", _}, &1))
 
-  defp alive?(pid), do: match?({_, 0}, System.cmd("ps", ["-p", Integer.to_string(pid)], stderr_to_stdout: true))
+  defp alive?(pid),
+    do: match?({_, 0}, System.cmd("ps", ["-p", Integer.to_string(pid)], stderr_to_stdout: true))
 
   defp classify_failure(name, pid, run_log) do
     cleanup(name, pid)
@@ -168,42 +188,78 @@ defmodule VzBeam.Commands.Run do
   end
 
   defp cleanup(name, pid) do
-    if alive?(pid), do: System.cmd("kill", ["-TERM", Integer.to_string(pid)], stderr_to_stdout: true)
+    if alive?(pid),
+      do: System.cmd("kill", ["-TERM", Integer.to_string(pid)], stderr_to_stdout: true)
+
     File.rm(Pidfile.path(name))
   end
 
   defp build_argv(vz, name, m, opts, share) do
     bundle = Home.bundle_dir(name)
-    [vz, "run",
-     "--machine-id", m["machineIdentifier"], "--hardware-model", m["hardwareModel"], "--mac", m["macAddress"],
-     "--disk", Path.join(bundle, "disk.img"), "--aux", Path.join(bundle, "aux.img"),
-     "--cpu", to_string(m["cpuCount"]), "--mem", to_string(m["memoryBytes"]),
-     mode_flag(opts), "--resolution", Defaults.resolve(opts[:resolution], :resolution)] ++ share_args(share)
+
+    [
+      vz,
+      "run",
+      "--guest",
+      "macos",
+      "--machine-id",
+      m["machineIdentifier"],
+      "--hardware-model",
+      m["hardwareModel"],
+      "--mac",
+      m["macAddress"],
+      "--disk",
+      Path.join(bundle, "disk.img"),
+      "--aux",
+      Path.join(bundle, "aux.img"),
+      "--cpu",
+      to_string(m["cpuCount"]),
+      "--mem",
+      to_string(m["memoryBytes"]),
+      mode_flag(opts),
+      "--resolution",
+      Defaults.resolve(opts[:resolution], :resolution)
+    ] ++ share_args(share)
   end
 
   defp mode_flag(opts), do: if(opts[:gui], do: "--gui", else: "--headless")
   defp share_args(nil), do: []
   defp share_args(%{tag: t, path: p}), do: ["--share", t, p]
 
-  defp refute_running(name), do: if(Pidfile.running?(name), do: {:error, :already_running}, else: :ok)
+  defp refute_running(name),
+    do: if(Pidfile.running?(name), do: {:error, :already_running}, else: :ok)
+
   defp parse_share(nil), do: {:ok, nil}
   defp parse_share(spec), do: Share.parse(spec)
 
   defp started_error({:error, {:vz, _d, code, msg}}, _log), do: vz_error(code, msg)
+
   defp started_error({:error, :timeout}, log),
     do: {:error, 1, ["run timed out waiting for startup; see ", log, "\n"]}
+
   defp started_error({:error, :exited_early}, log),
     do: {:error, 1, ["run failed: VM exited during startup; see ", log, "\n"]}
 
   defp vz_error(6, _msg), do: error({:error, :at_capacity})
-  defp vz_error(code, msg), do: {:error, 1, ["run failed: VZError ", to_string(code), " ", to_string(msg), "\n"]}
+
+  defp vz_error(code, msg),
+    do: {:error, 1, ["run failed: VZError ", to_string(code), " ", to_string(msg), "\n"]}
 
   defp error({:error, :no_such_bundle}), do: {:error, 1, "run: no such bundle\n"}
   defp error({:error, :already_running}), do: {:error, 1, "run: already running\n"}
-  defp error({:error, :at_capacity}), do: {:error, 1, "run: at capacity (2 VMs already running); stop one first\n"}
-  defp error({:error, :lock_timeout}), do: {:error, 1, ["run: another `vzbeam run` is in progress; retry\n"]}
-  defp error({:error, :lock_corrupt}), do: {:error, 1, ["run: ", VzBeam.Lock.path(), " is unreadable; remove it if stale\n"]}
-  defp error({:error, :not_found}), do: {:error, 1, "run: sidecar not found; build it (`mix vz.build`)\n"}
+
+  defp error({:error, :at_capacity}),
+    do: {:error, 1, "run: at capacity (2 VMs already running); stop one first\n"}
+
+  defp error({:error, :lock_timeout}),
+    do: {:error, 1, ["run: another `vzbeam run` is in progress; retry\n"]}
+
+  defp error({:error, :lock_corrupt}),
+    do: {:error, 1, ["run: ", VzBeam.Lock.path(), " is unreadable; remove it if stale\n"]}
+
+  defp error({:error, :not_found}),
+    do: {:error, 1, "run: sidecar not found; build it (`mix vz.build`)\n"}
+
   defp error({:error, :no_equals}), do: {:error, 2, "run: --share must be tag=/path\n"}
   defp error({:error, :empty_tag}), do: {:error, 2, "run: --share tag is empty\n"}
   defp error({:error, :tag_too_long}), do: {:error, 2, "run: --share tag exceeds 36 bytes\n"}
