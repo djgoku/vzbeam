@@ -73,6 +73,35 @@ defmodule VzBeam.Commands.NewTest do
     }
   end
 
+  defp make_openbsd_base(home, name \\ "obsd-base") do
+    dir = Path.join(home, name)
+    File.mkdir_p!(dir)
+
+    File.write!(
+      Path.join(dir, "config.json"),
+      Jason.encode!(%{
+        "schemaVersion" => 2,
+        "guestOS" => "openbsd",
+        "name" => name,
+        "base" => nil,
+        "image" => %{
+          "kind" => "iso",
+          "file" => "abc.iso",
+          "sha256" => "abc",
+          "version" => "7.9"
+        },
+        "machineIdentifier" => "OLD-OPENBSD-ID",
+        "macAddress" => "5e:79:00:00:00:01",
+        "sshUser" => "deploy",
+        "cpuCount" => 2,
+        "memoryBytes" => 2_147_483_648
+      })
+    )
+
+    File.write!(Path.join(dir, "disk.img"), "OPENBSD-DISK")
+    File.write!(Path.join(dir, "nvram.bin"), "OPENBSD-NVRAM")
+  end
+
   test "clone copies the bundle and re-identifies it", %{home: home} do
     File.write!(Path.join([home, "base", "install-owner.json"]), "stray")
     parent = self()
@@ -102,6 +131,57 @@ defmodule VzBeam.Commands.NewTest do
     :ok = VzBeam.Pidfile.write("base", System.pid())
     assert {:error, 1, msg} = New.run(["dev", "base"], deps())
     assert IO.iodata_to_binary(msg) =~ "running"
+  end
+
+  test "clone preserves OpenBSD state and re-identifies with a generic identity", %{home: home} do
+    make_openbsd_base(home)
+    parent = self()
+
+    clone_deps = %{
+      deps()
+      | reid: fn guest ->
+          send(parent, {:reid_guest, guest})
+
+          {:ok, %{machine_identifier: "NEW-OPENBSD-ID", mac_address: "5e:79:00:00:00:02"}}
+        end
+    }
+
+    assert {:ok, _} = New.run(["obsd-copy", "obsd-base"], clone_deps)
+    assert_received {:reid_guest, :openbsd}
+    manifest = Jason.decode!(File.read!(Path.join([home, "obsd-copy", "config.json"])))
+    assert manifest["guestOS"] == "openbsd"
+    assert manifest["sshUser"] == "deploy"
+    assert manifest["image"]["sha256"] == "abc"
+    assert manifest["machineIdentifier"] == "NEW-OPENBSD-ID"
+    assert manifest["macAddress"] == "5e:79:00:00:00:02"
+    assert File.read!(Path.join([home, "obsd-copy", "disk.img"])) == "OPENBSD-DISK"
+    assert File.read!(Path.join([home, "obsd-copy", "nvram.bin"])) == "OPENBSD-NVRAM"
+  end
+
+  test "OpenBSD clone disk growth explains unallocated guest space", %{home: home} do
+    make_openbsd_base(home)
+    assert {:ok, message} = New.run(["obsd-copy", "obsd-base", "--disk-gb", "1"], deps())
+    text = IO.iodata_to_binary(message)
+    assert text =~ "unallocated"
+    assert text =~ "OpenBSD"
+    refute text =~ "recoveryOS"
+  end
+
+  test "clone describes malformed and unsupported base manifests", %{home: home} do
+    fixtures = [
+      {"future", Jason.encode!(%{"schemaVersion" => 99, "guestOS" => "macos"}),
+       "unsupported schema version 99"},
+      {"unknown", Jason.encode!(%{"schemaVersion" => 2, "guestOS" => "plan9"}),
+       "unsupported guest OS plan9"},
+      {"malformed", "not-json", "invalid config.json"}
+    ]
+
+    for {name, body, expected} <- fixtures do
+      File.mkdir_p!(Path.join(home, name))
+      File.write!(Path.join([home, name, "config.json"]), body)
+      assert {:error, 1, message} = New.run(["copy-#{name}", name], deps())
+      assert IO.iodata_to_binary(message) =~ "new: #{expected}"
+    end
   end
 
   test "clone refuses a reserved name" do

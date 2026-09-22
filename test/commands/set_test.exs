@@ -8,10 +8,23 @@ defmodule VzBeam.Commands.SetTest do
     home = Path.join(System.tmp_dir!(), "vzbeam-set-#{System.unique_integer([:positive])}")
     System.put_env("VZBEAM_HOME", home)
     File.mkdir_p!(Path.join(home, "dev"))
-    File.write!(Path.join([home, "dev", "config.json"]),
-      Jason.encode!(%{"name" => "dev", "cpuCount" => 4, "memoryBytes" => 8 * @gb,
-                      "macAddress" => "5e:aa", "machineIdentifier" => "MID"}))
-    on_exit(fn -> System.delete_env("VZBEAM_HOME"); File.rm_rf!(home) end)
+
+    File.write!(
+      Path.join([home, "dev", "config.json"]),
+      Jason.encode!(%{
+        "name" => "dev",
+        "cpuCount" => 4,
+        "memoryBytes" => 8 * @gb,
+        "macAddress" => "5e:aa",
+        "machineIdentifier" => "MID"
+      })
+    )
+
+    on_exit(fn ->
+      System.delete_env("VZBEAM_HOME")
+      File.rm_rf!(home)
+    end)
+
     {:ok, home: home}
   end
 
@@ -69,6 +82,29 @@ defmodule VzBeam.Commands.SetTest do
     assert File.stat!(Path.join([home, "dev", "disk.img"])).size == 2 * @gb
   end
 
+  test "OpenBSD disk growth explains unallocated guest space", %{home: home} do
+    File.write!(
+      Path.join([home, "dev", "config.json"]),
+      Jason.encode!(%{
+        "schemaVersion" => 2,
+        "guestOS" => "openbsd",
+        "name" => "dev",
+        "cpuCount" => 4,
+        "memoryBytes" => 8 * @gb,
+        "macAddress" => "5e:79",
+        "machineIdentifier" => "OID",
+        "sshUser" => "deploy"
+      })
+    )
+
+    sparse!(Path.join([home, "dev", "disk.img"]), 1 * @gb)
+    assert {:ok, message} = Set.run(["dev", "--disk-gb", "2"])
+    text = IO.iodata_to_binary(message)
+    assert text =~ "unallocated"
+    assert text =~ "OpenBSD disk and filesystem tools"
+    refute text =~ "recoveryOS"
+  end
+
   test "same-size disk is a no-op success", %{home: home} do
     sparse!(Path.join([home, "dev", "disk.img"]), 2 * @gb)
     assert {:ok, msg} = Set.run(["dev", "--disk-gb", "2"])
@@ -94,9 +130,25 @@ defmodule VzBeam.Commands.SetTest do
 
   test "surfaces a write failure as exit 1", %{home: home} do
     dir = Path.join(home, "dev")
-    File.chmod!(dir, 0o500)                     # no write -> the atomic write fails
-    on_exit(fn -> File.chmod(dir, 0o700) end)   # restore so setup's rm_rf can clean up
+    # no write -> the atomic write fails
+    File.chmod!(dir, 0o500)
+    # restore so setup's rm_rf can clean up
+    on_exit(fn -> File.chmod(dir, 0o700) end)
     assert {:error, 1, msg} = Set.run(["dev", "--cpu", "2"])
     assert IO.iodata_to_binary(msg) =~ "set failed"
+  end
+
+  test "describes malformed and unsupported manifests with the set prefix", %{home: home} do
+    for {body, expected} <- [
+          {Jason.encode!(%{"schemaVersion" => 99, "guestOS" => "macos"}),
+           "unsupported schema version 99"},
+          {Jason.encode!(%{"schemaVersion" => 2, "guestOS" => "plan9"}),
+           "unsupported guest OS plan9"},
+          {"not-json", "invalid config.json"}
+        ] do
+      File.write!(Path.join([home, "dev", "config.json"]), body)
+      assert {:error, 1, message} = Set.run(["dev", "--cpu", "2"])
+      assert IO.iodata_to_binary(message) =~ "set: #{expected}"
+    end
   end
 end

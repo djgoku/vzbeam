@@ -146,7 +146,7 @@ defmodule VzBeam.Commands.New do
              base,
              override_note(opts),
              ")\n"
-             | clone_disk_note(opts)
+             | clone_disk_note(base_m, opts)
            ]}
         end
       end)
@@ -174,18 +174,25 @@ defmodule VzBeam.Commands.New do
   defp maybe_grow_disk(_pending, nil), do: :ok
   defp maybe_grow_disk(pending, gb), do: Disk.grow(Path.join(pending, "disk.img"), gb * @gb)
 
-  # A clone inherits the base's partition layout, so the grown space lands
-  # after the (SIP-protected) recoveryOS partition and can't extend root.
-  defp clone_disk_note(opts) do
-    if opts[:disk_gb] do
-      [
-        "note: a clone inherits its base's partition layout -- the extra space cannot\n",
-        "extend the guest's root volume (recoveryOS sits in the way); use it as a new\n",
-        "APFS volume, or restore fresh with --disk-gb for a full-size root.\n"
-      ]
-    else
-      []
-    end
+  defp clone_disk_note(manifest, opts) do
+    if opts[:disk_gb],
+      do: clone_disk_note(GuestPolicy.disk_growth_note(manifest)),
+      else: []
+  end
+
+  defp clone_disk_note(:macos_recovery_partition) do
+    [
+      "note: a clone inherits its base's partition layout -- the extra space cannot\n",
+      "extend the guest's root volume (recoveryOS sits in the way); use it as a new\n",
+      "APFS volume, or restore fresh with --disk-gb for a full-size root.\n"
+    ]
+  end
+
+  defp clone_disk_note(:openbsd_unallocated_space) do
+    [
+      "note: the cloned host image grew, leaving unallocated guest space. Use OpenBSD\n",
+      "disk and filesystem tools inside the guest to partition and grow into it.\n"
+    ]
   end
 
   defp override_note(opts) do
@@ -506,6 +513,10 @@ defmodule VzBeam.Commands.New do
   defp error({:error, :missing_nvram}),
     do: {:error, 1, "new: installer did not create nvram.bin\n"}
 
+  defp error({:error, :invalid_manifest}), do: manifest_error(:invalid_manifest)
+  defp error({:error, {:unsupported_schema, _} = reason}), do: manifest_error(reason)
+  defp error({:error, {:unsupported_guest, _} = reason}), do: manifest_error(reason)
+
   defp error({:error, {:pending_cleanup, _file, _reason}}),
     do: {:error, 1, "new: could not clear a stale .pending dir\n"}
 
@@ -513,6 +524,8 @@ defmodule VzBeam.Commands.New do
     do: {:error, 1, ["new: --disk-gb must be >= the base disk (", Disk.gb(have), ")\n"]}
 
   defp error({:error, reason}), do: {:error, 1, ["new failed: ", inspect(reason), "\n"]}
+
+  defp manifest_error(reason), do: {:error, 1, ["new: ", Manifest.describe_error(reason), "\n"]}
 
   defp default_deps,
     do: %{
