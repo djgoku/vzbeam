@@ -1,7 +1,7 @@
 # OpenBSD ISO Support Design
 
 **Date:** 2026-09-21
-**Status:** Approved in conversation; awaiting written-spec review
+**Status:** Approved in conversation; revised after external written-spec review
 **Branch:** `openbsd-iso-support`
 
 ## 1. Goal
@@ -92,7 +92,7 @@ For `run`:
 - Both forms attach media read-only, place it before the installed disk in boot order, imply GUI mode, and conflict with `--headless`.
 - A one-shot override remains attached across guest reboots within that run. It is discarded when the VM process exits and never changes the manifest or cached ISO.
 
-The two `run --iso` forms require a small command-specific parser because Elixir's `OptionParser` does not represent an option with an optional value. The grammar is unambiguous because `run` has exactly one required positional bundle name.
+The two `run --iso` forms require a small command-specific parser because Elixir's `OptionParser` does not represent an option with an optional value. The parser binds a token immediately after `--iso` as its path only when another positional token remains as the one required bundle name. Thus both `run --iso NAME` (cached media) and `run --iso PATH NAME` (one-shot media) remain valid and unambiguous, as do their name-first equivalents. `--iso=PATH` is always the valued form. Repeated `--iso` across either spelling, empty `--iso=`, and `--no-iso` are usage errors.
 
 ## 6. Manifest and bundle layout
 
@@ -137,7 +137,7 @@ OpenBSD bundle files are:
 
 macOS bundles retain `disk.img` and `aux.img`. The macOS-only `hardwareModel` field is absent from OpenBSD manifests.
 
-Installation state is not persisted in a completed bundle. Work in progress lives in `<name>.pending`, which normal bundle discovery ignores.
+Installation state is not persisted in a completed bundle. Work in progress lives in `<name>.pending`, which normal bundle discovery ignores. While work is active, that directory contains `install-owner.json` with the BEAM OS PID and its process start time. The owner is written while holding vzbeam's short-lived host lock, before the lock is released, so another `new` process can distinguish a live operation from abandoned state without a missing-owner race.
 
 ## 7. ISO retention
 
@@ -147,9 +147,9 @@ Local OpenBSD media is retained under:
 $VZBEAM_HOME/cache/iso/<sha256>.iso
 ```
 
-Acquisition streams the source through SHA-256, rejects empty files, and promotes a temporary file atomically. Placement uses the repository's existing copy-on-write copy strategy where the filesystem supports it. A digest hit reuses the existing file.
+Acquisition streams the source through SHA-256, rejects empty files, and promotes a temporary file atomically. Placement first requests a copy-on-write clone and falls back to an ordinary copy when the source volume does not support cloning. A digest hit reuses the existing file.
 
-The cached ISO is shared by any number of bundles. Clones inherit only its manifest reference. Removing a bundle does not remove cached media. Cache garbage collection is deferred.
+The cached ISO is shared by any number of bundles. Clones inherit only its manifest reference. Removing a bundle does not remove cached media. A controlled acquisition failure removes only its own unique temporary; an orphaned cache temporary from host termination remains ignored until cache garbage collection, which is deferred.
 
 The digest provides identity and corruption detection against the recorded value; it does not prove authenticity. Users remain responsible for verifying OpenBSD release signatures before creation.
 
@@ -175,6 +175,8 @@ The OpenBSD configuration contains:
 
 Graphics remain present in headless OpenBSD configurations so the guest sees stable virtual hardware; headless mode omits only the host window and interactive input devices.
 
+Storage ordering expresses the intended recovery boot priority, but EFI firmware may retain a disk-first choice in persistent variables. Physical-hardware validation must verify that the ISO actually boots. If it does not, recovery runs use a fresh temporary EFI variable store for that invocation while leaving the bundle's persisted `nvram.bin` unchanged; normal boots and installation continue to use the persistent store.
+
 Audio, memory ballooning, serial-console UX, clipboard integration, and directory sharing are deferred.
 
 ## 9. Interactive installation flow
@@ -183,7 +185,7 @@ Audio, memory ballooning, serial-console UX, clipboard integration, and director
 
 1. Validate name, sizing, SSH user, resolution, source file, and destination absence.
 2. Retain the ISO in the content-addressed cache.
-3. Clear a stale `<name>.pending`, create it, and create the sparse `disk.img`.
+3. Under vzbeam's host lock, recheck that the final bundle is absent, then inspect `<name>.pending/install-owner.json`. Refuse a live owner; clear only a valid owner whose PID/start-time proves it is dead; treat a missing or malformed owner as an explicit manual-cleanup error; create the pending directory and write this process's PID/start-time owner before releasing the lock.
 4. Invoke the sidecar's guest-aware `install` command as a foreground streamed process.
 5. Swift creates `nvram.bin`, mints the generic machine identifier and MAC, validates the configuration, starts the VM, and opens the AppKit window.
 6. Elixir remains attached until a terminal sidecar event.
@@ -198,7 +200,7 @@ Before opening the window, the CLI tells the user to:
 
 The framework exposes no OpenBSD installer-completion signal. Therefore success means the VM started and later powered off normally. Reboot keeps the ISO attached and does not finish the command; the user must eventually power off.
 
-Closing the installer window is cancellation. Swift stops the VM, emits an error terminal, and exits nonzero. Controlled errors remove the pending bundle. A host crash, power loss, or `SIGKILL` can leave a stale pending directory; it stays invisible and is cleared by the next creation attempt.
+Closing the installer window is cancellation. Swift stops the VM, emits an error terminal, and exits nonzero. Controlled errors remove only the pending bundle whose owner record still matches the current process. A host crash, power loss, or `SIGKILL` can leave a stale pending directory; it stays invisible and is cleared by the next creation attempt only after PID/start-time liveness proves that its owner is gone. Bundle names ending in `.pending` are invalid so incomplete state can never masquerade as a user bundle.
 
 ## 10. Sidecar protocol
 
@@ -216,14 +218,16 @@ The existing structured error event remains authoritative. `installed` is emitte
 Sidecar commands become guest-aware:
 
 ```text
-vz install --guest openbsd --iso ... --disk ... --nvram ... --cpu ... --mem ... --resolution ...
+vz install --guest openbsd --iso ... --disk ... --nvram ... --cpu ... --mem ... --resolution ... --parent-pid ...
 vz run --guest openbsd --machine-id ... --mac ... --disk ... --nvram ... [--iso ...] ...
 vz reid --guest <macos|openbsd>
 ```
 
 The current `restore`, `image-info`, signal-driven force-stop behavior, and JSON-lines robustness rules remain intact.
 
-The foreground installation transport must not orphan the AppKit sidecar if the BEAM exits. Normal close, SIGINT, and SIGTERM paths stop the VM and reap the child. Unpreventable hard termination is handled by stale-pending cleanup.
+The foreground installation transport must not orphan the AppKit sidecar. Normal close, SIGHUP, SIGINT, and SIGTERM make the BEAM request cancellation and reap the child. If the BEAM disappears without that handshake, the sidecar's `--parent-pid` watchdog detects it, stops the VM, and exits; unpreventable simultaneous hard termination is handled by stale-pending cleanup.
+
+The sidecar installs `SIG_IGN` before creating each `DispatchSourceSignal`; otherwise the process-wide default action can terminate it before the dispatch source observes the signal. The retained sources are cancelled during the single terminal cleanup path.
 
 ## 11. Elixir guest policy
 
@@ -272,7 +276,7 @@ OpenBSD uses the existing NAT attachment and host DHCP-lease lookup by MAC. `Ssh
 doas -n /sbin/shutdown -p now
 ```
 
-The user configures a narrow `nopass` rule in `/etc/doas.conf`; failure returns an actionable message and points to `kill`. Signal-driven `kill` remains guest-independent.
+The user configures a narrow `nopass` rule in `/etc/doas.conf`; recognized `doas` or `sudo` privilege-denial output returns an immediate actionable message and points to `kill`. Other nonzero SSH exits still enter the normal PID reap loop because a successful shutdown commonly tears down the SSH connection before it can return status 0. Signal-driven `kill` remains guest-independent.
 
 ### Clone
 
@@ -288,7 +292,7 @@ CPU, memory, and sparse-disk resizing remain shared. macOS keeps its recovery-pa
 
 `run --share` on an OpenBSD bundle fails before spawn with an explicit unsupported-guest message. OpenBSD's documented VirtIO device set does not include VirtioFS.
 
-The lock around VM launch remains. The preflight count of two applies only when launching macOS and counts only running macOS bundles. OpenBSD is not assigned an artificial two-VM limit; framework errors remain authoritative.
+The lock around VM launch remains. The preflight count of two applies only when launching macOS and counts only running bundles whose manifests can be read and normalize to macOS; unreadable manifests are ignored rather than guessed to be macOS. OpenBSD is not assigned an artificial two-VM limit; framework errors remain authoritative.
 
 ## 13. Error handling
 
@@ -297,6 +301,7 @@ The lock around VM launch remains. The preflight count of two applies only when 
 - Bare `run --iso` reports a missing cached file with the recorded digest and remediation.
 - One-shot ISO validation failures name the supplied path.
 - Sidecar errors preserve their domain, code, message, and stderr tail.
+- Manifest-reading commands render unsupported schema, unsupported guest, and malformed JSON errors explicitly. `ls` keeps the row visible and labels its OS column with the manifest problem instead of silently treating it as an empty manifest.
 - A guest stop before the VM reports successful start is an installation failure.
 - An ordinary power-off after successful start is installation completion because no deeper installer signal exists.
 - `run --iso` and `--headless` are mutually exclusive.
@@ -314,7 +319,7 @@ The normal `mix test` suite covers:
 - Guest-policy values and unsupported guests.
 - ISO hashing, atomic placement, deduplication, empty files, stale files, and copy failures.
 - Official-name version inference and custom filenames.
-- `new --iso` parsing, mutual exclusions, progress/instruction output, success, cancellation, error cleanup, and stale pending cleanup.
+- `new --iso` parsing, mutual exclusions, progress/instruction output, success, cancellation, error cleanup, active-owner refusal, stale pending cleanup, and pending invisibility.
 - Both `run --iso` forms, GUI implication, headless conflict, cached-media lookup, one-shot behavior, and argv construction.
 - Protocol-v2 negotiation and `install_started`/`installed`/error precedence through the fake sidecar.
 - Per-bundle SSH users and OpenBSD shutdown arguments.
@@ -405,6 +410,8 @@ The README and CLI help will state:
 - Install media is retained for recovery in a shared content-addressed cache.
 - `run --iso` uses cached media; `run --iso PATH` is a one-run override.
 - ISO recovery implies GUI and conflicts with headless mode.
+- A live PID/start-time owner protects `.pending`; only confirmed-dead pending work is reclaimed.
+- Recovery first uses read-only ISO-first storage ordering and falls back to an invocation-only fresh EFI variable store if physical validation shows persistent NVRAM overriding that order.
 - Linux can later reuse generic EFI and ISO machinery through a new guest policy.
 
 ## 18. Open questions
