@@ -1,6 +1,6 @@
 defmodule VzBeam.Commands.NewTest do
   use ExUnit.Case, async: false
-  alias VzBeam.Commands.New
+  alias VzBeam.{Commands.New, PendingBundle}
 
   setup do
     home = Path.join(System.tmp_dir!(), "vzbeam-#{System.unique_integer([:positive])}")
@@ -49,11 +49,32 @@ defmodule VzBeam.Commands.NewTest do
            build: "25F80"
          }}
       end,
+      ensure_iso: fn _ ->
+        {:ok, :fetched,
+         %{
+           "kind" => "iso",
+           "source" => "/tmp/install79.iso",
+           "file" => "abc.iso",
+           "sha256" => "abc",
+           "version" => "7.9"
+         }}
+      end,
+      install: fn opts, report ->
+        File.touch!(opts.nvram)
+        report.({:event, "install_started", %{"pid" => 123}})
+        report.({:event, "installed", %{}})
+
+        {:ok, %{machine_identifier: "OPENBSD-ID", mac_address: "5e:79:00:00:00:01"}}
+      end,
+      claim_pending: &PendingBundle.claim/1,
+      cleanup_pending: &PendingBundle.cleanup/1,
+      promote_pending: &PendingBundle.promote/1,
       progress: fn _io -> :ok end
     }
   end
 
   test "clone copies the bundle and re-identifies it", %{home: home} do
+    File.write!(Path.join([home, "base", "install-owner.json"]), "stray")
     parent = self()
 
     clone_deps = %{
@@ -73,6 +94,7 @@ defmodule VzBeam.Commands.NewTest do
     assert m["cpuCount"] == 4
     # cloned
     assert File.read!(Path.join([home, "dev", "disk.img"])) == "DISK"
+    refute File.exists?(Path.join([home, "dev", "install-owner.json"]))
     refute File.exists?(Path.join(home, "dev.pending"))
   end
 
@@ -95,6 +117,146 @@ defmodule VzBeam.Commands.NewTest do
     assert m["base"] == nil and m["machineIdentifier"] == "RID"
     assert m["schemaVersion"] == 2 and m["guestOS"] == "macos"
     refute Map.has_key?(m, "sshUser")
+  end
+
+  test "--iso installs OpenBSD in pending and promotes a complete bundle", %{home: home} do
+    assert {:ok, out} =
+             New.run(
+               [
+                 "obsd",
+                 "--iso",
+                 "/tmp/install79.iso",
+                 "--ssh-user",
+                 "deploy",
+                 "--resolution",
+                 "1280x800"
+               ],
+               deps()
+             )
+
+    assert IO.iodata_to_binary(out) =~ "created obsd"
+    manifest = Jason.decode!(File.read!(Path.join([home, "obsd", "config.json"])))
+    assert manifest["guestOS"] == "openbsd"
+    assert manifest["sshUser"] == "deploy"
+    assert manifest["image"]["sha256"] == "abc"
+    assert manifest["machineIdentifier"] == "OPENBSD-ID"
+    refute Map.has_key?(manifest, "hardwareModel")
+    assert File.regular?(Path.join([home, "obsd", "disk.img"]))
+    assert File.regular?(Path.join([home, "obsd", "nvram.bin"]))
+    refute File.exists?(Path.join(home, "obsd.pending"))
+  end
+
+  test "--iso announces user-specific installer instructions before starting", %{home: _home} do
+    parent = self()
+    base = deps()
+
+    traced = %{
+      base
+      | progress: fn io -> send(parent, {:trace, :progress, IO.iodata_to_binary(io)}) end,
+        install: fn opts, report ->
+          send(parent, {:trace, :install})
+          base.install.(opts, report)
+        end
+    }
+
+    assert {:ok, _} =
+             New.run(["obsd", "--iso", "x.iso", "--ssh-user", "deploy"], traced)
+
+    assert_receive {:trace, :progress, iso_notice}
+    assert iso_notice =~ "ISO"
+    assert_receive {:trace, :progress, instructions}
+    assert instructions =~ "deploy"
+    assert instructions =~ "sshd"
+    assert instructions =~ "halt -p"
+    assert_receive {:trace, :install}
+  end
+
+  test "--iso validates media combinations, user, resolution, and pending names", %{home: home} do
+    for args <- [
+          ["obsd", "--iso", "x.iso", "--image", "latest"],
+          ["obsd", "base", "--iso", "x.iso"],
+          ["obsd"],
+          ["obsd", "--iso", "x.iso", "--ssh-user", ""],
+          ["obsd", "--iso", "x.iso", "--ssh-user", "root"],
+          ["obsd", "--iso", "x.iso", "--ssh-user", "bad@host"],
+          ["obsd", "--iso", "x.iso", "--resolution", "wide"],
+          ["obsd.pending", "base"],
+          ["obsd.pending", "--image", "latest"],
+          ["obsd.pending", "--iso", "x.iso"]
+        ] do
+      assert {:error, 2, _} = New.run(args, deps())
+      refute File.exists?(Path.join(home, "obsd"))
+      refute File.exists?(Path.join(home, "obsd.pending"))
+    end
+  end
+
+  test "--iso cleans its owned pending bundle on cancellation and startup failure", %{home: home} do
+    failures = [
+      {{:error, {:vz, "vz", 130, "install cancelled"}}, "cancelled"},
+      {{:error, {:vz, "VZErrorDomain", 5, "startup failed"}}, "startup failed"}
+    ]
+
+    for {result, expected} <- failures do
+      failing = %{deps() | install: fn _opts, _report -> result end}
+      assert {:error, 1, message} = New.run(["obsd", "--iso", "x.iso"], failing)
+      assert IO.iodata_to_binary(message) =~ expected
+      refute File.exists?(Path.join(home, "obsd"))
+      refute File.exists?(Path.join(home, "obsd.pending"))
+    end
+  end
+
+  test "ISO acquisition completes before the pending claim", %{home: _home} do
+    parent = self()
+    base = deps()
+
+    ordered = %{
+      base
+      | ensure_iso: fn spec ->
+          send(parent, :iso_ready)
+          base.ensure_iso.(spec)
+        end,
+        claim_pending: fn name ->
+          assert_received :iso_ready
+          PendingBundle.claim(name)
+        end
+    }
+
+    assert {:ok, _} = New.run(["obsd", "--iso", "x.iso"], ordered)
+  end
+
+  test "a live pending owner blocks creation without deleting its bytes", %{home: home} do
+    assert {:ok, claim} = PendingBundle.claim("obsd")
+    File.write!(Path.join(claim.path, "sentinel"), "live")
+
+    assert {:error, 1, message} = New.run(["obsd", "--iso", "x.iso"], deps())
+    assert IO.iodata_to_binary(message) =~ "creation already in progress"
+    assert File.read!(Path.join([home, "obsd.pending", "sentinel"])) == "live"
+  end
+
+  test "a dead pending owner is reclaimed before installation", %{home: home} do
+    pending = Path.join(home, "obsd.pending")
+    File.mkdir_p!(pending)
+    File.write!(Path.join(pending, "sentinel"), "stale")
+
+    File.write!(
+      Path.join(pending, "install-owner.json"),
+      Jason.encode!(%{"pid" => 999_999, "startedAt" => "dead"})
+    )
+
+    assert {:ok, _} = New.run(["obsd", "--iso", "x.iso"], deps())
+    refute File.exists?(Path.join([home, "obsd", "sentinel"]))
+  end
+
+  test "an ownerless pending bundle is preserved with actionable recovery guidance", %{home: home} do
+    pending = Path.join(home, "obsd.pending")
+    File.mkdir_p!(pending)
+    File.write!(Path.join(pending, "sentinel"), "unknown")
+
+    assert {:error, 1, message} = New.run(["obsd", "--iso", "x.iso"], deps())
+    text = IO.iodata_to_binary(message)
+    assert text =~ pending
+    assert text =~ "verify no old `vzbeam new` is running"
+    assert File.read!(Path.join(pending, "sentinel")) == "unknown"
   end
 
   test "--image is mutually exclusive with a base" do
@@ -139,9 +301,15 @@ defmodule VzBeam.Commands.NewTest do
     assert_received {:progress, "fetched 26.5.1 (25F80)\n"}
   end
 
-  test "clone clears a stale .pending and does not nest", %{home: home} do
+  test "clone reclaims a dead owner's stale .pending and does not nest", %{home: home} do
     File.mkdir_p!(Path.join(home, "dev.pending"))
     File.write!(Path.join([home, "dev.pending", "junk"]), "stale")
+
+    File.write!(
+      Path.join([home, "dev.pending", "install-owner.json"]),
+      Jason.encode!(%{"pid" => 999_999, "startedAt" => "dead"})
+    )
+
     assert {:ok, _} = New.run(["dev", "base"], deps())
     # stale junk gone
     refute File.exists?(Path.join([home, "dev", "junk"]))
