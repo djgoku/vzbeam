@@ -55,6 +55,13 @@ ISO attached and continues the same interactive session; it does not finish `new
 After power-off, the completed bundle contains `config.json`, `disk.img`, and
 `nvram.bin`.
 
+If finalization fails after power-off, vzbeam preserves the completed directory and
+prints both its location and the intended final bundle path. Do not rerun `vzbeam new`
+for that name: a later creation may treat a dead pending owner as stale. First confirm
+that no creation process is active, resolve the reported lock or destination collision,
+move the preserved directory to the printed final path if needed, and remove only its
+`install-owner.json` marker. The other bundle files are the completed installation.
+
 ## First normal boot and SSH setup
 
 Boot with a window for the first post-install check:

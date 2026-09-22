@@ -270,7 +270,13 @@ defmodule VzBeam.Commands.Run do
 
   defp resolve_media(_manifest, nil), do: {:ok, nil}
   defp resolve_media(manifest, :cached), do: IsoCache.resolve_cached(manifest)
-  defp resolve_media(_manifest, {:path, path}), do: IsoCache.validate_one_shot(path)
+
+  defp resolve_media(_manifest, {:path, path}) do
+    case IsoCache.validate_one_shot(path) do
+      {:ok, expanded} -> {:ok, expanded}
+      {:error, reason} -> {:error, {:one_shot_iso, reason, path}}
+    end
+  end
 
   defp validate_guest_files(name, %{"guestOS" => "openbsd"}) do
     if File.regular?(Path.join(Home.bundle_dir(name), "nvram.bin")),
@@ -333,29 +339,56 @@ defmodule VzBeam.Commands.Run do
   defp error({:error, :not_found}),
     do: {:error, 1, "run: sidecar not found; build it (`mix vz.build`)\n"}
 
+  defp error({:error, {:incompatible, have, want}}),
+    do:
+      {:error, 1,
+       [
+         "run: sidecar protocol ",
+         to_string(have),
+         " is incompatible with required protocol ",
+         to_string(want),
+         "; rebuild it (`mix vz.build`)\n"
+       ]}
+
   defp error({:error, :iso_macos}),
     do: {:error, 2, "run: --iso recovery is only supported for OpenBSD bundles\n"}
 
   defp error({:error, :share_openbsd}),
     do: {:error, 2, "run: --share is not supported for OpenBSD bundles\n"}
 
-  defp error({:error, {:missing_cached_iso, _digest}}),
-    do: {:error, 1, "run: cached ISO is missing; reinstall or pass --iso PATH\n"}
+  defp error({:error, {:missing_cached_iso, digest}}),
+    do:
+      {:error, 1,
+       [
+         "run: cached ISO ",
+         digest,
+         " is missing at ",
+         cached_iso_path(digest),
+         "; reinstall or pass --iso PATH\n"
+       ]}
 
-  defp error({:error, {:corrupt_cached_iso, _digest}}),
-    do: {:error, 1, "run: cached ISO is corrupt; reinstall or pass --iso PATH\n"}
+  defp error({:error, {:corrupt_cached_iso, digest}}),
+    do:
+      {:error, 1,
+       [
+         "run: cached ISO ",
+         digest,
+         " is corrupt at ",
+         cached_iso_path(digest),
+         "; reinstall or pass --iso PATH\n"
+       ]}
 
   defp error({:error, :invalid_iso_reference}),
     do: {:error, 1, "run: bundle has an invalid cached ISO reference\n"}
 
-  defp error({:error, :not_regular}),
-    do: {:error, 1, "run: one-shot ISO path is missing or not a regular file\n"}
+  defp error({:error, {:one_shot_iso, :not_regular, path}}),
+    do: {:error, 1, ["run: one-shot ISO ", path, " is missing or not a regular file\n"]}
 
-  defp error({:error, :empty_iso}),
-    do: {:error, 1, "run: one-shot ISO is empty\n"}
+  defp error({:error, {:one_shot_iso, :empty_iso, path}}),
+    do: {:error, 1, ["run: one-shot ISO ", path, " is empty\n"]}
 
-  defp error({:error, :not_local_file}),
-    do: {:error, 1, "run: one-shot ISO must be a local file\n"}
+  defp error({:error, {:one_shot_iso, :not_local_file, path}}),
+    do: {:error, 1, ["run: one-shot ISO ", path, " must be a local file\n"]}
 
   defp error({:error, :missing_nvram}),
     do: {:error, 1, "run: OpenBSD bundle is missing nvram.bin\n"}
@@ -372,6 +405,8 @@ defmodule VzBeam.Commands.Run do
   defp error({:error, :tag_too_long}), do: {:error, 2, "run: --share tag exceeds 36 bytes\n"}
   defp error({:error, :no_such_dir}), do: {:error, 2, "run: --share host dir does not exist\n"}
   defp error({:error, reason}), do: {:error, 1, ["run failed: ", inspect(reason), "\n"]}
+
+  defp cached_iso_path(digest), do: Path.join(IsoCache.dir(), digest <> ".iso")
 
   defp default_deps, do: %{with_lock: &Lock.with_lock/1, spawn: &Daemon.spawn_detached/2}
 end

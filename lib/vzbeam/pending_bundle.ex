@@ -40,7 +40,7 @@ defmodule VzBeam.PendingBundle do
     path = Home.bundle_dir(name) <> ".pending"
 
     cond do
-      Home.exists?(name) ->
+      path_present?(Home.bundle_dir(name)) ->
         {:error, :exists}
 
       not File.exists?(path) ->
@@ -95,7 +95,10 @@ defmodule VzBeam.PendingBundle do
     end
   end
 
-  defp refute_final(name), do: if(Home.exists?(name), do: {:error, :exists}, else: :ok)
+  defp refute_final(name),
+    do: if(path_present?(Home.bundle_dir(name)), do: {:error, :exists}, else: :ok)
+
+  defp path_present?(path), do: match?({:ok, _}, File.lstat(path))
 
   defp rename(from, to) do
     case File.rename(from, to) do

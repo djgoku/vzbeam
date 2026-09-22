@@ -37,8 +37,8 @@ defmodule VzBeam.Commands.Stop do
   end
 
   defp privilege_denied?(:openbsd, out, _status) do
-    String.contains?(out, "Operation not permitted") or
-      String.contains?(out, "a password is required") or
+    String.contains?(out, "doas: Operation not permitted") or
+      String.contains?(out, "doas: Authentication required") or
       String.contains?(out, "doas is not enabled")
   end
 

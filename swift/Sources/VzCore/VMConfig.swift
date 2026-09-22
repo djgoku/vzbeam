@@ -45,7 +45,13 @@ public struct RunOpts {
 
 public enum ConfigError: Error, CustomStringConvertible {
     case badField(String)
-    public var description: String { switch self { case .badField(let f): return "invalid \(f)" } }
+    case unsupported(String)
+    public var description: String {
+        switch self {
+        case .badField(let f): return "invalid \(f)"
+        case .unsupported(let message): return message
+        }
+    }
 }
 
 public func buildConfiguration(_ opts: RunOpts) throws -> VZVirtualMachineConfiguration {

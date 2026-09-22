@@ -413,7 +413,12 @@ defmodule VzBeam.Commands.New do
   defp refute_running(base),
     do: if(Pidfile.running?(base), do: {:error, :base_running}, else: :ok)
 
-  defp refute_exists(name), do: if(Home.exists?(name), do: {:error, :exists}, else: :ok)
+  defp refute_exists(name) do
+    case File.lstat(Home.bundle_dir(name)) do
+      {:error, :enoent} -> :ok
+      _ -> {:error, :exists}
+    end
+  end
 
   defp claim_pending(name, deps) do
     case deps.claim_pending.(name) do
@@ -430,7 +435,7 @@ defmodule VzBeam.Commands.New do
       {:ok, output} ->
         case deps.promote_pending.(claim) do
           :ok -> {:ok, output}
-          {:error, _} = promote_error -> cleanup_after_error(claim, deps, promote_error)
+          {:error, reason} -> preserve_after_promote_error(claim, reason)
         end
 
       {:error, _} = work_error ->
@@ -443,6 +448,17 @@ defmodule VzBeam.Commands.New do
       :ok -> error(original_error)
       {:error, _} = cleanup_error -> error(cleanup_error)
     end
+  end
+
+  defp preserve_after_promote_error(claim, reason) do
+    final = Home.bundle_dir(claim.name)
+
+    location =
+      if File.exists?(claim.path),
+        do: claim.path,
+        else: final
+
+    error({:error, {:promotion_failed, location, final, reason}})
   end
 
   defp copy_bundle_contents(base_dir, pending_dir) do
@@ -503,6 +519,46 @@ defmodule VzBeam.Commands.New do
 
   defp error({:error, :lock_corrupt}),
     do: {:error, 1, "new: the host lock is unreadable; inspect it before retrying\n"}
+
+  defp error({:error, {:incompatible, have, want}}),
+    do:
+      {:error, 1,
+       [
+         "new: sidecar protocol ",
+         to_string(have),
+         " is incompatible with required protocol ",
+         to_string(want),
+         "; rebuild it (`mix vz.build`)\n"
+       ]}
+
+  defp error({:error, :not_regular}),
+    do: {:error, 1, "new: ISO path is missing or not a regular file\n"}
+
+  defp error({:error, :empty_iso}), do: {:error, 1, "new: ISO is empty\n"}
+  defp error({:error, :not_local_file}), do: {:error, 1, "new: ISO must be a local file\n"}
+
+  defp error({:error, :source_changed}),
+    do: {:error, 1, "new: ISO changed while it was being retained; retry\n"}
+
+  defp error({:error, {:copy_failed, reason}}),
+    do: {:error, 1, ["new: could not retain ISO: ", reason, "\n"]}
+
+  defp error({:error, {:promotion_failed, location, final, reason}}),
+    do:
+      {:error, 1,
+       [
+         "new: could not finalize the bundle (",
+         inspect(reason),
+         "); completed data was preserved at ",
+         location,
+         ". Do not rerun `vzbeam new` for this name. After resolving the reported ",
+         "problem and confirming no creation process is active, move the preserved ",
+         "directory to ",
+         final,
+         " if needed, then remove ",
+         Path.join(final, "install-owner.json"),
+         ".\n"
+       ]}
 
   defp error({:error, {:vz, _domain, 130, message}}),
     do: {:error, 1, ["new: ", message, "\n"]}

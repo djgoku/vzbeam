@@ -171,11 +171,12 @@ The OpenBSD configuration contains:
 - `VZVirtioGraphicsDeviceConfiguration` with one scanout at the requested resolution.
 - `VZVirtioEntropyDeviceConfiguration`.
 - USB keyboard and screen-coordinate pointing devices for GUI sessions.
-- When requested, a read-only `VZUSBMassStorageDeviceConfiguration` for the ISO, ordered before the writable disk.
+- During installation, a read-only `VZUSBMassStorageDeviceConfiguration` for the ISO is ordered before the writable VirtIO disk.
+- During recovery, configuration starts with only the read-only ISO and an explicit XHCI controller. After the VM starts and EFI has selected the only available boot device, the writable installed disk is hot-plugged through XHCI before the sidecar reports `started`.
 
 Graphics remain present in headless OpenBSD configurations so the guest sees stable virtual hardware; headless mode omits only the host window and interactive input devices.
 
-Storage ordering expresses the intended recovery boot priority, but EFI firmware may retain a disk-first choice in persistent variables. Physical-hardware validation must verify that the ISO actually boots. If it does not, recovery runs use a fresh temporary EFI variable store for that invocation while leaving the bundle's persisted `nvram.bin` unchanged; normal boots and installation continue to use the persistent store.
+Physical testing showed that storage ordering and a fresh variable store alone did not reliably prevent EFI from choosing the installed disk. Recovery therefore uses both a fresh invocation-only EFI variable store and ISO-only startup, then hot-plugs the installed disk after startup. The runtime XHCI attachment requires macOS 15 or newer. The bundle's persisted `nvram.bin` remains unchanged; installation and normal boot retain the macOS 13 floor and continue to use the persistent store.
 
 Audio, memory ballooning, serial-console UX, clipboard integration, and directory sharing are deferred.
 
@@ -411,7 +412,7 @@ The README and CLI help will state:
 - `run --iso` uses cached media; `run --iso PATH` is a one-run override.
 - ISO recovery implies GUI and conflicts with headless mode.
 - A live PID/start-time owner protects `.pending`; only confirmed-dead pending work is reclaimed.
-- Recovery first uses read-only ISO-first storage ordering and falls back to an invocation-only fresh EFI variable store if physical validation shows persistent NVRAM overriding that order.
+- Recovery uses an invocation-only fresh EFI variable store, boots with only the read-only ISO visible to EFI, and then hot-plugs the installed disk over XHCI. This recovery path requires macOS 15 or newer and leaves the bundle's persisted EFI variables unchanged.
 - Linux can later reuse generic EFI and ISO machinery through a new guest policy.
 
 ## 18. Open questions

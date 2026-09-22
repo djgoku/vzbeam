@@ -58,6 +58,21 @@ defmodule VzBeam.PendingBundleTest do
     refute File.exists?(final <> ".pending")
   end
 
+  test "claim rejects a bare final directory before creating pending state", %{
+    home: home,
+    self_pid: pid
+  } do
+    final = Path.join(home, "obsd")
+    File.mkdir_p!(final)
+    File.write!(Path.join(final, "sentinel"), "keep")
+
+    assert {:error, :exists} =
+             PendingBundle.claim("obsd", deps(%{pid => {:ok, "self-start"}}))
+
+    assert File.read!(Path.join(final, "sentinel")) == "keep"
+    refute File.exists?(final <> ".pending")
+  end
+
   test "a matching live owner blocks the claim without deleting pending bytes", %{self_pid: pid} do
     pending = seed_pending("obsd", %{"pid" => 42, "startedAt" => "live"})
 

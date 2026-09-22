@@ -132,7 +132,7 @@ defmodule VzBeam.CLI do
                                with --headless. With no PATH, use the bundle's cached
                                installer ISO. With PATH, attach that local ISO for
                                this run only, without caching or changing its stored
-                               media reference.
+                               media reference. Recovery requires macOS 15 or newer.
       --share <tag>=/host/path share a host dir into the guest via VirtioFS. <tag> is a
                                name you choose (<= 36 bytes, no '='), not a keyword: it
                                is the handle the guest mounts by, and the host path is

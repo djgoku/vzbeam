@@ -129,6 +129,25 @@ defmodule VzBeam.Commands.RunTest do
     assert IO.iodata_to_binary(msg) =~ "no such bundle"
   end
 
+  test "protocol mismatch tells the user to rebuild the sidecar before spawn", %{home: home} do
+    stale = Path.join(home, "stale-vz")
+
+    File.write!(
+      stale,
+      "#!/bin/sh\necho '{\"type\":\"version\",\"protocol\":1}'\n"
+    )
+
+    File.chmod!(stale, 0o755)
+    System.put_env("VZBEAM_VZ", stale)
+
+    assert {:error, 1, message} =
+             Run.run(["dev"], deps(fn _, _ -> flunk("stale sidecar must not spawn") end))
+
+    text = IO.iodata_to_binary(message)
+    assert text =~ "protocol 1"
+    assert text =~ "mix vz.build"
+  end
+
   test "refuses at the 2-VM cap (real count_running over two live pidfiles)" do
     for n <- ["a", "b"] do
       make_bundle(n)
@@ -307,7 +326,10 @@ defmodule VzBeam.Commands.RunTest do
     File.rm!(cached)
 
     assert {:error, 1, missing} = Run.run(["obsd", "--iso"], never_spawn)
-    assert IO.iodata_to_binary(missing) =~ "cached ISO"
+    missing_text = IO.iodata_to_binary(missing)
+    assert missing_text =~ "cached ISO"
+    assert missing_text =~ manifest["image"]["sha256"]
+    assert missing_text =~ cached
     assert File.read!(manifest_path) == manifest_bytes
 
     empty = Path.join(home, "empty.iso")
@@ -315,7 +337,9 @@ defmodule VzBeam.Commands.RunTest do
 
     for path <- [Path.join(home, "missing.iso"), empty] do
       assert {:error, 1, message} = Run.run(["obsd", "--iso", path], never_spawn)
-      assert IO.iodata_to_binary(message) =~ "ISO"
+      text = IO.iodata_to_binary(message)
+      assert text =~ "ISO"
+      assert text =~ path
       assert File.read!(manifest_path) == manifest_bytes
     end
 

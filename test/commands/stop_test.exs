@@ -125,7 +125,7 @@ defmodule VzBeam.Commands.StopTest do
   test "recognizes OpenBSD doas denials with a narrow nopass rule" do
     for output <- [
           "doas: Operation not permitted\n",
-          "doas: a password is required\n",
+          "doas: Authentication required\n",
           "doas is not enabled\n"
         ] do
       ssh = fn _ -> {output, 1} end
@@ -138,6 +138,17 @@ defmodule VzBeam.Commands.StopTest do
       assert text =~ "vzbeam kill obsd"
       assert File.exists?(VzBeam.Pidfile.path("obsd"))
     end
+  end
+
+  test "does not misclassify a bare SSH Operation not permitted as a doas denial" do
+    ssh = fn _ -> {"ssh: connect to host guest port 22: Operation not permitted\n", 255} end
+
+    assert {:error, 1, message} =
+             Stop.run(["obsd"], %{ssh: ssh, leases: fn -> leases() end, reap_ms: 0})
+
+    text = IO.iodata_to_binary(message)
+    assert text =~ "did not stop in time"
+    refute text =~ "doas.conf"
   end
 
   test "ordinary SSH disconnect still reaps a successful shutdown" do

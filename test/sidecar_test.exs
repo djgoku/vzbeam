@@ -23,13 +23,28 @@ defmodule VzBeam.SidecarTest do
   end
 
   # Write a throwaway sidecar that emits `body` (sh) and point VZBEAM_VZ at it.
-  defp fake_vz_emitting(body) do
+  defp fake_vz_emitting(body, protocol \\ 2) do
     path = Path.join(System.tmp_dir!(), "fake_vz_emit_#{System.unique_integer([:positive])}")
-    File.write!(path, "#!/bin/sh\n" <> body)
+
+    File.write!(
+      path,
+      "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '{\"type\":\"version\",\"protocol\":#{protocol}}'; exit 0; fi\n" <>
+        body
+    )
+
     File.chmod!(path, 0o755)
     System.put_env("VZBEAM_VZ", path)
     on_exit(fn -> File.rm(path) end)
     :ok
+  end
+
+  defp protocol2_runner(runner) do
+    fn path, args, opts ->
+      case args do
+        ["--version"] -> {~s({"type":"version","protocol":2}\n), 0}
+        _ -> runner.(path, args, opts)
+      end
+    end
   end
 
   @restore_args ~w(--ipsw x --disk d --aux a --disk-size 1 --cpu 1 --mem 1)
@@ -100,9 +115,10 @@ defmodule VzBeam.SidecarTest do
   end
 
   test "image_info parses the image event (injected runner)" do
-    runner = fn _p, ["image-info", "latest"], _ ->
-      {~s({"type":"image","version":"26.5.1","build":"25F80","url":"u","source":"latest"}\n), 0}
-    end
+    runner =
+      protocol2_runner(fn _p, ["image-info", "latest"], _ ->
+        {~s({"type":"image","version":"26.5.1","build":"25F80","url":"u","source":"latest"}\n), 0}
+      end)
 
     assert {:ok, %{version: "26.5.1", build: "25F80", source: "latest"}} =
              Sidecar.image_info("latest", runner)
@@ -111,11 +127,12 @@ defmodule VzBeam.SidecarTest do
   test "reid passes the guest and parses the identity" do
     parent = self()
 
-    runner = fn _path, ["reid", "--guest", "openbsd"], _opts ->
-      send(parent, :openbsd_reid)
+    runner =
+      protocol2_runner(fn _path, ["reid", "--guest", "openbsd"], _opts ->
+        send(parent, :openbsd_reid)
 
-      {~s({"type":"reid","machineIdentifier":"GENERIC","macAddress":"5e:11:22:33:44:55"}\n), 0}
-    end
+        {~s({"type":"reid","machineIdentifier":"GENERIC","macAddress":"5e:11:22:33:44:55"}\n), 0}
+      end)
 
     assert {:ok, %{machine_identifier: "GENERIC", mac_address: "5e:11:22:33:44:55"}} =
              Sidecar.reid(:openbsd, runner)
@@ -129,16 +146,30 @@ defmodule VzBeam.SidecarTest do
 
   test "truncated output surfaces as :unterminated" do
     # no trailing newline
-    runner = fn _p, _a, _ -> {~s({"type":"image","build":"25F80"}), 0} end
+    runner = protocol2_runner(fn _p, _a, _ -> {~s({"type":"image","build":"25F80"}), 0} end)
     assert {:error, :unterminated} = Sidecar.image_info("latest", runner)
   end
 
   test "non-zero exit dominates a terminal event (spec precedence)" do
-    runner = fn _p, _a, _ ->
-      {~s({"type":"image","version":"26","build":"X","url":"u","source":"s"}\n), 1}
-    end
+    runner =
+      protocol2_runner(fn _p, _a, _ ->
+        {~s({"type":"image","version":"26","build":"X","url":"u","source":"s"}\n), 1}
+      end)
 
     assert {:error, {:exit, 1}} = VzBeam.Sidecar.image_info("latest", runner)
+  end
+
+  test "reid and install reject a stale protocol before invoking their subcommands" do
+    fake_vz_emitting(
+      """
+      echo '{"type":"error","domain":"test","code":99,"message":"subcommand invoked"}'
+      exit 99
+      """,
+      1
+    )
+
+    assert {:error, {:incompatible, 1, 2}} = Sidecar.reid(:openbsd)
+    assert {:error, {:incompatible, 1, 2}} = Sidecar.install(@install)
   end
 
   test "stream/4 yields progress events then the restored terminal (real Port + fake_vz)" do
@@ -167,6 +198,23 @@ defmodule VzBeam.SidecarTest do
              Sidecar.install(@install, fn event -> send(parent, event) end)
 
     assert_received {:event, "install_started", %{"pid" => pid}} when is_integer(pid)
+  end
+
+  test "install passes the BEAM parent pid to the sidecar watchdog" do
+    argv_file =
+      Path.join(System.tmp_dir!(), "vzbeam-install-argv-#{System.unique_integer([:positive])}")
+
+    fake_vz_emitting("""
+    printf '%s\n' "$@" > '#{argv_file}'
+    echo '{"type":"installed","machineIdentifier":"OID","macAddress":"5e:aa:bb:cc:dd:ee"}'
+    exit 0
+    """)
+
+    on_exit(fn -> File.rm(argv_file) end)
+    assert {:ok, _} = Sidecar.install(@install)
+    argv = File.read!(argv_file) |> String.split("\n", trim: true)
+    parent_index = Enum.find_index(argv, &(&1 == "--parent-pid"))
+    assert Enum.at(argv, parent_index + 1) == System.pid()
   end
 
   test "install error dominates a prior success-looking event" do
