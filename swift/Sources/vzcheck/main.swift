@@ -74,6 +74,13 @@ check("run.openbsd.reject.aux", rejectsRun(runBase + ["--guest", "openbsd", "--n
                                                           "--aux", "/tmp/aux.img"]))
 check("run.openbsd.reject.share", rejectsRun(runBase + ["--guest", "openbsd", "--nvram", "/tmp/nvram.bin",
                                                             "--share", "src", "/tmp"]))
+if let recovery = try? parseRunOpts(runBase + ["--guest", "openbsd",
+                                               "--nvram", "/tmp/nvram.bin",
+                                               "--iso", "/tmp/recovery.iso"]) {
+    check("run.openbsd.recovery", recovery.recovery)
+} else {
+    check("run.openbsd.recovery", false)
+}
 
 // --- Install parsing ---
 let installArgs = ["--guest", "openbsd", "--iso", "/tmp/install.iso",
@@ -111,10 +118,55 @@ let vmDir = fm.temporaryDirectory.appendingPathComponent("vzcheck-\(UUID().uuidS
 let diskURL = vmDir.appendingPathComponent("disk.img")
 let isoURL = vmDir.appendingPathComponent("install.iso")
 let nvramURL = vmDir.appendingPathComponent("nvram.bin")
+let persistentNVRAMURL = vmDir.appendingPathComponent("persistent-nvram.bin")
 try? fm.createDirectory(at: vmDir, withIntermediateDirectories: true)
 fm.createFile(atPath: diskURL.path, contents: Data(repeating: 0, count: 1024 * 1024))
 fm.createFile(atPath: isoURL.path, contents: Data(repeating: 0, count: 2048))
+let persistentNVRAM = Data("persistent bundle nvram".utf8)
+fm.createFile(atPath: persistentNVRAMURL.path, contents: persistentNVRAM)
 defer { try? fm.removeItem(at: vmDir) }
+
+do {
+    let recoveryOpts = RunOpts(guest: .openbsd, machineId: genericMid, hardwareModel: nil,
+                               mac: "5e:11:22:33:44:55", disk: diskURL.path, aux: nil,
+                               nvram: persistentNVRAMURL.path, iso: isoURL.path, cpu: 2,
+                               mem: 2_147_483_648, gui: true, width: 1024, height: 768,
+                               share: nil, createNVRAM: false, recovery: true)
+    let recovery = try prepareRunOptions(recoveryOpts, temporaryRoot: vmDir)
+    let temporaryNVRAM = recovery.options.nvram ?? ""
+    check("recovery.nvram.temporary", temporaryNVRAM != persistentNVRAMURL.path)
+    check("recovery.nvram.creates", recovery.options.createNVRAM)
+    check("recovery.nvram.directory", recovery.temporaryDirectory != nil)
+    let recoveryCfg = try buildConfiguration(recovery.options)
+    check("recovery.storage.iso-usb",
+          recoveryCfg.storageDevices.first is VZUSBMassStorageDeviceConfiguration)
+    check("recovery.storage.iso-only", recoveryCfg.storageDevices.count == 1)
+    if #available(macOS 15.0, *) {
+        check("recovery.usb.hotplug-controller",
+              recoveryCfg.usbControllers.first is VZXHCIControllerConfiguration)
+    } else {
+        check("recovery.usb.hotplug-controller", false)
+    }
+    check("recovery.nvram.temp-created", fm.fileExists(atPath: temporaryNVRAM))
+    check("recovery.nvram.bundle-unchanged",
+          (try? Data(contentsOf: persistentNVRAMURL)) == persistentNVRAM)
+    cleanupRunPreparation(recovery)
+    check("recovery.nvram.cleaned", !fm.fileExists(atPath: temporaryNVRAM))
+
+    let normalOpts = RunOpts(guest: .openbsd, machineId: genericMid, hardwareModel: nil,
+                             mac: "5e:11:22:33:44:55", disk: diskURL.path, aux: nil,
+                             nvram: persistentNVRAMURL.path, iso: nil, cpu: 2,
+                             mem: 2_147_483_648, gui: false, width: 1024, height: 768,
+                             share: nil, createNVRAM: false)
+    let normal = try prepareRunOptions(normalOpts, temporaryRoot: vmDir)
+    check("normal.nvram.persistent", normal.options.nvram == persistentNVRAMURL.path)
+    check("normal.nvram.reuses", !normal.options.createNVRAM)
+    check("normal.nvram.no-temp", normal.temporaryDirectory == nil)
+    check("normal.not-recovery", !normal.options.recovery)
+} catch {
+    FileHandle.standardError.write(Data("FAIL: recovery.nvram \(error)\n".utf8))
+    failures += 1
+}
 
 do {
     let guiOpts = RunOpts(guest: .openbsd, machineId: genericMid, hardwareModel: nil,

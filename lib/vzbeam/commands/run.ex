@@ -1,6 +1,20 @@
 defmodule VzBeam.Commands.Run do
-  @moduledoc "run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path] — boot a VM (detached)."
-  alias VzBeam.{Home, Manifest, Pidfile, Defaults, Keys, Share, Sidecar, Daemon, Lock, Protocol}
+  @moduledoc "Boot a VM, optionally attaching OpenBSD recovery media for one run."
+  alias VzBeam.{
+    Home,
+    Manifest,
+    Pidfile,
+    Defaults,
+    Keys,
+    Share,
+    Sidecar,
+    Daemon,
+    Lock,
+    Protocol,
+    GuestPolicy,
+    IsoCache,
+    RunOptions
+  }
 
   @handshake_ms 60_000
   @poll_ms 100
@@ -9,41 +23,26 @@ defmodule VzBeam.Commands.Run do
   def run(args), do: run(args, default_deps())
 
   def run(args, deps) do
-    {opts, positional, invalid} =
-      OptionParser.parse(args,
-        strict: [gui: :boolean, headless: :boolean, resolution: :string, share: :string]
-      )
-
-    cond do
-      invalid != [] ->
-        {:error, 2, "run: unknown option\n"}
-
-      opts[:gui] && opts[:headless] ->
-        {:error, 2, "run: --gui and --headless are mutually exclusive\n"}
-
-      true ->
-        case positional do
-          [name] ->
-            start(name, opts, deps)
-
-          _ ->
-            {:error, 2,
-             "usage: vzbeam run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path]\n"}
-        end
+    case RunOptions.parse(args) do
+      {:ok, opts} -> start(opts, deps)
+      {:error, reason} -> options_error(reason)
     end
   end
 
-  defp start(name, opts, deps) do
+  defp start(%{name: name} = opts, deps) do
     with {:ok, m} <- Manifest.read_or(name, :no_such_bundle),
          :ok <- refute_running(name),
-         {:ok, share} <- parse_share(opts[:share]),
+         :ok <- validate_policy(m, opts),
+         {:ok, share} <- parse_share(opts.share),
+         {:ok, iso} <- resolve_media(m, opts.iso),
+         :ok <- validate_guest_files(name, m),
          {:ok, _keys} <- Keys.ensure(),
          {:ok, vz} <- Sidecar.locate(),
          :ok <- Sidecar.check_version(vz) do
       run_log = Path.join(Home.bundle_dir(name), "run.log")
-      argv = build_argv(vz, name, m, opts, share)
+      argv = build_argv(vz, name, m, opts, share, iso)
 
-      case launch(name, argv, run_log, deps) do
+      case launch(name, m, argv, run_log, deps) do
         {:ok, pid} -> finish(name, pid, run_log)
         {:spawn_exited, pid} -> classify_failure(name, pid, run_log)
         {:error, reason} -> error({:error, reason})
@@ -53,12 +52,12 @@ defmodule VzBeam.Commands.Run do
     end
   end
 
-  defp launch(name, argv, run_log, deps) do
+  defp launch(name, manifest, argv, run_log, deps) do
     File.mkdir_p!(Home.bundle_dir(name))
 
     result =
       deps.with_lock.(fn ->
-        if count_running() >= 2 do
+        if GuestPolicy.consumes_macos_slot?(manifest) and count_running() >= 2 do
           {:error, :at_capacity}
         else
           case deps.spawn.(argv, run_log) do
@@ -81,7 +80,15 @@ defmodule VzBeam.Commands.Run do
   end
 
   @spec count_running() :: non_neg_integer
-  def count_running, do: Enum.count(Home.bundles(), &Pidfile.running?/1)
+  def count_running do
+    Enum.count(Home.bundles(), fn name ->
+      Pidfile.running?(name) and
+        case Manifest.read(name) do
+          {:ok, manifest} -> GuestPolicy.consumes_macos_slot?(manifest)
+          {:error, _} -> false
+        end
+    end)
+  end
 
   defp finish(name, pid, run_log) do
     case await_started(run_log, pid, @handshake_ms) do
@@ -181,43 +188,109 @@ defmodule VzBeam.Commands.Run do
     File.rm(Pidfile.path(name))
   end
 
-  defp build_argv(vz, name, m, opts, share) do
+  defp build_argv(vz, name, m, opts, share, iso) do
     bundle = Home.bundle_dir(name)
 
+    [vz, "run"] ++
+      identity_args(m, bundle) ++
+      [
+        "--cpu",
+        to_string(m["cpuCount"]),
+        "--mem",
+        to_string(m["memoryBytes"]),
+        mode_flag(opts),
+        "--resolution",
+        Defaults.resolve(opts.resolution, :resolution)
+      ] ++ share_args(share) ++ iso_args(iso)
+  end
+
+  defp identity_args(%{"guestOS" => "macos"} = manifest, bundle) do
     [
-      vz,
-      "run",
       "--guest",
       "macos",
       "--machine-id",
-      m["machineIdentifier"],
+      manifest["machineIdentifier"],
       "--hardware-model",
-      m["hardwareModel"],
+      manifest["hardwareModel"],
       "--mac",
-      m["macAddress"],
+      manifest["macAddress"],
       "--disk",
       Path.join(bundle, "disk.img"),
       "--aux",
-      Path.join(bundle, "aux.img"),
-      "--cpu",
-      to_string(m["cpuCount"]),
-      "--mem",
-      to_string(m["memoryBytes"]),
-      mode_flag(opts),
-      "--resolution",
-      Defaults.resolve(opts[:resolution], :resolution)
-    ] ++ share_args(share)
+      Path.join(bundle, "aux.img")
+    ]
   end
 
-  defp mode_flag(opts), do: if(opts[:gui], do: "--gui", else: "--headless")
+  defp identity_args(%{"guestOS" => "openbsd"} = manifest, bundle) do
+    [
+      "--guest",
+      "openbsd",
+      "--machine-id",
+      manifest["machineIdentifier"],
+      "--mac",
+      manifest["macAddress"],
+      "--disk",
+      Path.join(bundle, "disk.img"),
+      "--nvram",
+      Path.join(bundle, "nvram.bin")
+    ]
+  end
+
+  defp mode_flag(opts), do: if(opts.gui, do: "--gui", else: "--headless")
   defp share_args(nil), do: []
   defp share_args(%{tag: t, path: p}), do: ["--share", t, p]
+  defp iso_args(nil), do: []
+  defp iso_args(path), do: ["--iso", path]
+
+  defp validate_policy(manifest, opts) do
+    cond do
+      opts.iso != nil and GuestPolicy.guest(manifest) == :macos ->
+        {:error, :iso_macos}
+
+      opts.share != nil and not GuestPolicy.supports_share?(manifest) ->
+        {:error, :share_openbsd}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp resolve_media(_manifest, nil), do: {:ok, nil}
+  defp resolve_media(manifest, :cached), do: IsoCache.resolve_cached(manifest)
+  defp resolve_media(_manifest, {:path, path}), do: IsoCache.validate_one_shot(path)
+
+  defp validate_guest_files(name, %{"guestOS" => "openbsd"}) do
+    if File.regular?(Path.join(Home.bundle_dir(name), "nvram.bin")),
+      do: :ok,
+      else: {:error, :missing_nvram}
+  end
+
+  defp validate_guest_files(_name, %{"guestOS" => "macos"}), do: :ok
 
   defp refute_running(name),
     do: if(Pidfile.running?(name), do: {:error, :already_running}, else: :ok)
 
   defp parse_share(nil), do: {:ok, nil}
   defp parse_share(spec), do: Share.parse(spec)
+
+  defp options_error(:mode_conflict),
+    do: {:error, 2, "run: --gui and --headless are mutually exclusive\n"}
+
+  defp options_error(:iso_headless),
+    do: {:error, 2, "run: --iso cannot be used with --headless\n"}
+
+  defp options_error(:repeated_iso),
+    do: {:error, 2, "run: --iso may be specified only once\n"}
+
+  defp options_error(:bad_resolution),
+    do: {:error, 2, "run: invalid --resolution (expected WIDTHxHEIGHT)\n"}
+
+  defp options_error(:unknown_option), do: {:error, 2, "run: unknown option\n"}
+
+  defp options_error(:usage),
+    do:
+      {:error, 2,
+       "usage: vzbeam run <name> [--gui|--headless] [--resolution WxH] [--share tag=/path] [--iso [PATH]]\n"}
 
   defp started_error({:error, {:vz, _d, code, msg}}, _log), do: vz_error(code, msg)
 
@@ -236,7 +309,7 @@ defmodule VzBeam.Commands.Run do
   defp error({:error, :already_running}), do: {:error, 1, "run: already running\n"}
 
   defp error({:error, :at_capacity}),
-    do: {:error, 1, "run: at capacity (2 VMs already running); stop one first\n"}
+    do: {:error, 1, "run: at capacity (2 macOS VMs already running); stop one first\n"}
 
   defp error({:error, :lock_timeout}),
     do: {:error, 1, ["run: another `vzbeam run` is in progress; retry\n"]}
@@ -246,6 +319,40 @@ defmodule VzBeam.Commands.Run do
 
   defp error({:error, :not_found}),
     do: {:error, 1, "run: sidecar not found; build it (`mix vz.build`)\n"}
+
+  defp error({:error, :iso_macos}),
+    do: {:error, 2, "run: --iso recovery is only supported for OpenBSD bundles\n"}
+
+  defp error({:error, :share_openbsd}),
+    do: {:error, 2, "run: --share is not supported for OpenBSD bundles\n"}
+
+  defp error({:error, {:missing_cached_iso, _digest}}),
+    do: {:error, 1, "run: cached ISO is missing; reinstall or pass --iso PATH\n"}
+
+  defp error({:error, {:corrupt_cached_iso, _digest}}),
+    do: {:error, 1, "run: cached ISO is corrupt; reinstall or pass --iso PATH\n"}
+
+  defp error({:error, :invalid_iso_reference}),
+    do: {:error, 1, "run: bundle has an invalid cached ISO reference\n"}
+
+  defp error({:error, :not_regular}),
+    do: {:error, 1, "run: one-shot ISO path is missing or not a regular file\n"}
+
+  defp error({:error, :empty_iso}),
+    do: {:error, 1, "run: one-shot ISO is empty\n"}
+
+  defp error({:error, :not_local_file}),
+    do: {:error, 1, "run: one-shot ISO must be a local file\n"}
+
+  defp error({:error, :missing_nvram}),
+    do: {:error, 1, "run: OpenBSD bundle is missing nvram.bin\n"}
+
+  defp error({:error, manifest_error})
+       when manifest_error == :invalid_manifest or
+              (is_tuple(manifest_error) and
+                 elem(manifest_error, 0) in [:unsupported_schema, :unsupported_guest]) do
+    {:error, 1, ["run: ", Manifest.describe_error(manifest_error), "\n"]}
+  end
 
   defp error({:error, :no_equals}), do: {:error, 2, "run: --share must be tag=/path\n"}
   defp error({:error, :empty_tag}), do: {:error, 2, "run: --share tag is empty\n"}

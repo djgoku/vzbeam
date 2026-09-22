@@ -48,7 +48,8 @@ public func parseRunOpts(_ args: [String]) throws -> RunOpts {
     return RunOpts(guest: guest, machineId: mid, hardwareModel: hardwareModel,
                    mac: mac, disk: disk, aux: aux, nvram: nvram, iso: iso,
                    cpu: cpu, mem: mem, gui: a.has("gui"), width: w, height: h,
-                   share: share, createNVRAM: false)
+                   share: share, createNVRAM: false,
+                   recovery: guest == .openbsd && iso != nil)
 }
 
 private func parseResolution(_ s: String) -> (Int, Int) {
@@ -58,8 +59,11 @@ private func parseResolution(_ s: String) -> (Int, Int) {
 }
 
 final class RunSession: NSObject, VZVirtualMachineDelegate {
+    private static let recoveryDiskAttachDelay: TimeInterval = 5
+
     private let opts: RunOpts
     private var vm: VZVirtualMachine?
+    private var preparation: RunPreparation?
     private var finished = false           // only touched on .main → no lock needed
     private var sig: DispatchSourceSignal?
 
@@ -67,7 +71,11 @@ final class RunSession: NSObject, VZVirtualMachineDelegate {
 
     func start() {
         let cfg: VZVirtualMachineConfiguration
-        do { cfg = try buildConfiguration(opts) }
+        do {
+            let preparation = try prepareRunOptions(opts)
+            self.preparation = preparation
+            cfg = try buildConfiguration(preparation.options)
+        }
         catch { return finishError(error) }
 
         let vm = VZVirtualMachine(configuration: cfg)   // main queue
@@ -75,7 +83,7 @@ final class RunSession: NSObject, VZVirtualMachineDelegate {
         installSignalTrap()
         vm.start { [weak self] result in
             switch result {
-            case .success: Wire.emit(["type": "started", "pid": Int(getpid())])
+            case .success: self?.completeStart(vm: vm)
             case .failure(let e): self?.finishError(e)
             }
         }
@@ -95,6 +103,39 @@ final class RunSession: NSObject, VZVirtualMachineDelegate {
         s.resume(); sig = s
     }
 
+    private func completeStart(vm: VZVirtualMachine) {
+        guard opts.recovery else { return emitStarted() }
+        guard #available(macOS 15.0, *), let controller = vm.usbControllers.first else {
+            return finishError(ConfigError.badField("OpenBSD recovery requires macOS 15 or newer"))
+        }
+
+        let device: VZUSBMassStorageDevice
+        do {
+            let attachment = try VZDiskImageStorageDeviceAttachment(
+                url: URL(fileURLWithPath: opts.disk), readOnly: false)
+            let configuration = VZUSBMassStorageDeviceConfiguration(attachment: attachment)
+            device = VZUSBMassStorageDevice(configuration: configuration)
+        } catch {
+            return finishError(error)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.recoveryDiskAttachDelay) { [weak self] in
+            guard let self, !self.finished else { return }
+            controller.attach(device: device) { [weak self] error in
+                if let error {
+                    self?.finishError(error)
+                } else {
+                    self?.emitStarted()
+                }
+            }
+        }
+    }
+
+    private func emitStarted() {
+        guard !finished else { return }
+        Wire.emit(["type": "started", "pid": Int(getpid())])
+    }
+
     // VZVirtualMachineDelegate (fires on the main queue)
     func guestDidStop(_ virtualMachine: VZVirtualMachine) { finishStopped() }
     func virtualMachine(_ vm: VZVirtualMachine, didStopWithError error: Error) {
@@ -110,7 +151,13 @@ final class RunSession: NSObject, VZVirtualMachineDelegate {
         finishOnce { Wire.emitError(domain: domain, code: code, message); exit(1) }
     }
     private func finishOnce(_ body: () -> Void) {
-        if finished { return }; finished = true; body()
+        if finished { return }
+        finished = true
+        if let preparation {
+            cleanupRunPreparation(preparation)
+            self.preparation = nil
+        }
+        body()
     }
 
     private func runGUI(vm: VZVirtualMachine) {
