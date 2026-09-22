@@ -9,7 +9,9 @@ defmodule VzBeam.Commands.New do
 
   def run(args, deps) do
     {opts, positional, invalid} =
-      OptionParser.parse(args, strict: [image: :string, cpu: :integer, mem_gb: :integer, disk_gb: :integer])
+      OptionParser.parse(args,
+        strict: [image: :string, cpu: :integer, mem_gb: :integer, disk_gb: :integer]
+      )
 
     if invalid != [] do
       {:error, 2, "new: unknown option\n"}
@@ -62,17 +64,22 @@ defmodule VzBeam.Commands.New do
          {:ok, ids} <- deps.reid.(),
          :ok <- write_manifest(pending, clone_manifest(base_m, name, base, ids, opts)),
          :ok <- File.rename(pending, Home.bundle_dir(name)) do
-      {:ok, ["created ", name, " (clone of ", base, override_note(opts), ")\n" | clone_disk_note(opts)]}
+      {:ok,
+       ["created ", name, " (clone of ", base, override_note(opts), ")\n" | clone_disk_note(opts)]}
     else
-      err -> File.rm_rf(pending); error(err)
+      err ->
+        File.rm_rf(pending)
+        error(err)
     end
   end
 
   defp clone_manifest(base_m, name, base, ids, opts) do
     base_m
     |> Map.merge(%{
-      "name" => name, "base" => base,
-      "machineIdentifier" => ids.machine_identifier, "macAddress" => ids.mac_address,
+      "name" => name,
+      "base" => base,
+      "machineIdentifier" => ids.machine_identifier,
+      "macAddress" => ids.mac_address,
       "createdAt" => now()
     })
     |> maybe_put("cpuCount", opts[:cpu])
@@ -89,9 +96,11 @@ defmodule VzBeam.Commands.New do
   # after the (SIP-protected) recoveryOS partition and can't extend root.
   defp clone_disk_note(opts) do
     if opts[:disk_gb] do
-      ["note: a clone inherits its base's partition layout -- the extra space cannot\n",
-       "extend the guest's root volume (recoveryOS sits in the way); use it as a new\n",
-       "APFS volume, or restore fresh with --disk-gb for a full-size root.\n"]
+      [
+        "note: a clone inherits its base's partition layout -- the extra space cannot\n",
+        "extend the guest's root volume (recoveryOS sits in the way); use it as a new\n",
+        "APFS volume, or restore fresh with --disk-gb for a full-size root.\n"
+      ]
     else
       []
     end
@@ -99,9 +108,11 @@ defmodule VzBeam.Commands.New do
 
   defp override_note(opts) do
     notes =
-      [opts[:cpu] && "cpu=#{opts[:cpu]}",
-       opts[:mem_gb] && "mem=#{opts[:mem_gb]}G",
-       opts[:disk_gb] && "disk=#{opts[:disk_gb]}G"]
+      [
+        opts[:cpu] && "cpu=#{opts[:cpu]}",
+        opts[:mem_gb] && "mem=#{opts[:mem_gb]}G",
+        opts[:disk_gb] && "disk=#{opts[:disk_gb]}G"
+      ]
       |> Enum.filter(& &1)
 
     if notes == [], do: [], else: [", ", Enum.join(notes, " ")]
@@ -121,23 +132,51 @@ defmodule VzBeam.Commands.New do
          :ok <- clear_pending(pending),
          :ok <- File.mkdir_p(pending),
          :ok <- Disk.create_sparse(Path.join(pending, "disk.img"), disk_bytes),
-         {:ok, r} <- deps.restore.(%{ipsw: Path.join(Cache.dir(), entry["file"]),
-             disk: Path.join(pending, "disk.img"), aux: Path.join(pending, "aux.img"),
-             disk_size: disk_bytes, cpu: cpu, mem: mem_bytes}, restore_reporter(deps)),
+         {:ok, r} <-
+           deps.restore.(
+             %{
+               ipsw: Path.join(Cache.dir(), entry["file"]),
+               disk: Path.join(pending, "disk.img"),
+               aux: Path.join(pending, "aux.img"),
+               disk_size: disk_bytes,
+               cpu: cpu,
+               mem: mem_bytes
+             },
+             restore_reporter(deps)
+           ),
          :ok <- write_manifest(pending, restore_manifest(name, entry, r, cpu, mem_bytes)),
          :ok <- File.rename(pending, Home.bundle_dir(name)) do
-      {:ok, ["created ", name, " (cpu=#{cpu} mem=#{div(mem_bytes, @gb)}G disk=#{div(disk_bytes, @gb)}G)\n"]}
+      {:ok,
+       [
+         "created ",
+         name,
+         " (cpu=#{cpu} mem=#{div(mem_bytes, @gb)}G disk=#{div(disk_bytes, @gb)}G)\n"
+       ]}
     else
-      err -> File.rm_rf(pending); error(err)
+      err ->
+        File.rm_rf(pending)
+        error(err)
     end
   end
 
   defp restore_manifest(name, entry, r, cpu, mem_bytes) do
-    %{"name" => name, "base" => nil,
-      "image" => %{"version" => entry["version"], "build" => entry["build"], "source" => entry["source"]},
-      "machineIdentifier" => r.machine_identifier, "hardwareModel" => r.hardware_model,
-      "macAddress" => r.mac_address, "cpuCount" => cpu, "memoryBytes" => mem_bytes,
-      "createdAt" => now()}
+    %{
+      "schemaVersion" => 2,
+      "guestOS" => "macos",
+      "name" => name,
+      "base" => nil,
+      "image" => %{
+        "version" => entry["version"],
+        "build" => entry["build"],
+        "source" => entry["source"]
+      },
+      "machineIdentifier" => r.machine_identifier,
+      "hardwareModel" => r.hardware_model,
+      "macAddress" => r.mac_address,
+      "cpuCount" => cpu,
+      "memoryBytes" => mem_bytes,
+      "createdAt" => now()
+    }
   end
 
   # --- progress feedback ---------------------------------------------------
@@ -177,7 +216,9 @@ defmodule VzBeam.Commands.New do
     end
   end
 
-  defp refute_running(base), do: if(Pidfile.running?(base), do: {:error, :base_running}, else: :ok)
+  defp refute_running(base),
+    do: if(Pidfile.running?(base), do: {:error, :base_running}, else: :ok)
+
   defp refute_exists(name), do: if(Home.exists?(name), do: {:error, :exists}, else: :ok)
 
   defp cp_rc(src, dst) do
@@ -205,7 +246,9 @@ defmodule VzBeam.Commands.New do
   defp error({:error, :no_such_base}), do: {:error, 1, "new: no such base\n"}
   defp error({:error, :base_running}), do: {:error, 1, "new: base is running; stop it first\n"}
   defp error({:error, :exists}), do: {:error, 1, "new: bundle already exists\n"}
-  defp error({:error, {:pending_cleanup, _}}), do: {:error, 1, "new: could not clear a stale .pending dir\n"}
+
+  defp error({:error, {:pending_cleanup, _}}),
+    do: {:error, 1, "new: could not clear a stale .pending dir\n"}
 
   defp error({:error, {:shrink, have}}),
     do: {:error, 1, ["new: --disk-gb must be >= the base disk (", Disk.gb(have), ")\n"]}
@@ -213,6 +256,10 @@ defmodule VzBeam.Commands.New do
   defp error({:error, reason}), do: {:error, 1, ["new failed: ", inspect(reason), "\n"]}
 
   defp default_deps,
-    do: %{reid: &VzBeam.Sidecar.reid/0, ensure: &Cache.ensure/1,
-          restore: &VzBeam.Sidecar.restore/2, progress: &default_progress/1}
+    do: %{
+      reid: &VzBeam.Sidecar.reid/0,
+      ensure: &Cache.ensure/1,
+      restore: &VzBeam.Sidecar.restore/2,
+      progress: &default_progress/1
+    }
 end
