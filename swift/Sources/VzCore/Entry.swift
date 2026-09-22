@@ -9,6 +9,7 @@ public func dispatch(_ argv: [String]) {
     case "reid": runReid(rest); exit(0)
     case "image-info": runImageInfo(rest)
     case "restore": runRestore(rest)
+    case "install": runInstall(rest)
     case "run": runRun(rest)
     case "__sigprobe": runSigProbe()
     default: Wire.log("vz: unknown subcommand \(sub)"); exit(2)
