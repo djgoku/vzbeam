@@ -1,5 +1,7 @@
 # vzbeam
 
+![vzbeam and OpenBSD](./images/openbsd.png)
+
 Clean, disposable **macOS and OpenBSD** VMs on Apple Silicon for testing, CI, and
 sandboxing. Restore macOS from an IPSW or install OpenBSD interactively from a local ISO,
 clone a guest instantly (copy-on-write), run it GUI or headless, SSH in, then tear it down —
