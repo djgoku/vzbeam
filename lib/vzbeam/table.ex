@@ -6,7 +6,9 @@ defmodule VzBeam.Table do
     widths =
       rows
       |> Enum.zip()
-      |> Enum.map(fn col -> col |> Tuple.to_list() |> Enum.map(&String.length/1) |> Enum.max() end)
+      |> Enum.map(fn col ->
+        col |> Tuple.to_list() |> Enum.map(&String.length/1) |> Enum.max()
+      end)
 
     Enum.map(rows, fn cols ->
       cols

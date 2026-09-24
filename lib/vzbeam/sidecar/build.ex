@@ -19,7 +19,9 @@ defmodule VzBeam.Sidecar.Build do
 
   defp compile(swift_dir, runner) do
     {out, status} =
-      runner.("swift", ["build", "-c", "release", "--package-path", swift_dir], stderr_to_stdout: true)
+      runner.("swift", ["build", "-c", "release", "--package-path", swift_dir],
+        stderr_to_stdout: true
+      )
 
     if status == 0, do: :ok, else: {:error, "`swift build` failed (exit #{status}):\n#{out}"}
   end
@@ -27,7 +29,8 @@ defmodule VzBeam.Sidecar.Build do
   defp product_path(swift_dir, runner) do
     {out, status} =
       runner.("swift", ["build", "-c", "release", "--show-bin-path", "--package-path", swift_dir],
-        stderr_to_stdout: true)
+        stderr_to_stdout: true
+      )
 
     if status == 0,
       do: {:ok, Path.join(String.trim(to_string(out)), "vz")},
@@ -39,7 +42,8 @@ defmodule VzBeam.Sidecar.Build do
 
     {out, status} =
       runner.("codesign", ["--force", "--sign", "-", "--entitlements", ent, product],
-        stderr_to_stdout: true)
+        stderr_to_stdout: true
+      )
 
     if status == 0, do: :ok, else: {:error, "codesign failed (exit #{status}):\n#{out}"}
   end

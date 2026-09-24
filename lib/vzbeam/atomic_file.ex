@@ -10,7 +10,9 @@ defmodule VzBeam.AtomicFile do
            :ok <- File.rename(tmp, target) do
         :ok
       else
-        err -> File.rm(tmp); err
+        err ->
+          File.rm(tmp)
+          err
       end
     end
   end

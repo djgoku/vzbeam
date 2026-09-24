@@ -54,9 +54,15 @@ defmodule VzBeam.Pidfile do
   @spec reap(String.t(), integer, pos_integer) :: :stopped | :timeout
   def reap(name, deadline, poll_ms) do
     cond do
-      not running?(name) -> :stopped
-      System.monotonic_time(:millisecond) >= deadline -> :timeout
-      true -> Process.sleep(poll_ms); reap(name, deadline, poll_ms)
+      not running?(name) ->
+        :stopped
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        :timeout
+
+      true ->
+        Process.sleep(poll_ms)
+        reap(name, deadline, poll_ms)
     end
   end
 
