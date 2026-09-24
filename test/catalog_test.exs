@@ -63,8 +63,12 @@ defmodule VzBeam.CatalogTest do
 
   test "list extracts the VirtualMac2,1 entries via plutil" do
     assert {:ok, [entry]} = Catalog.list(deps())
-    assert entry == %{"version" => "26.6.1", "build" => "25G76",
-                      "url" => "https://updates.example/UniversalMac_26.6.1_25G76_Restore.ipsw"}
+
+    assert entry == %{
+             "version" => "26.6.1",
+             "build" => "25G76",
+             "url" => "https://updates.example/UniversalMac_26.6.1_25G76_Restore.ipsw"
+           }
   end
 
   test "resolve matches a build id case-insensitively" do

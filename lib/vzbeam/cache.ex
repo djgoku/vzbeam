@@ -97,10 +97,13 @@ defmodule VzBeam.Cache do
       final = Path.join(dir(), "#{info.build}.ipsw")
 
       case lookup(info.build) do
-        {:ok, entry} -> {:ok, :cached, entry}
-        :error -> if File.regular?(final),
-                    do: with({:ok, e} <- put_index(info, final), do: {:ok, :reconciled, e}),
-                    else: acquire(spec, info, final, deps)
+        {:ok, entry} ->
+          {:ok, :cached, entry}
+
+        :error ->
+          if File.regular?(final),
+            do: with({:ok, e} <- put_index(info, final), do: {:ok, :reconciled, e}),
+            else: acquire(spec, info, final, deps)
       end
     end
   end
@@ -145,7 +148,9 @@ defmodule VzBeam.Cache do
          :ok <- validate_build(info.build) do
       place_url(pending, Path.join(dir(), "#{info.build}.ipsw"), info)
     else
-      err -> File.rm(pending); err
+      err ->
+        File.rm(pending)
+        err
     end
   end
 
@@ -171,7 +176,9 @@ defmodule VzBeam.Cache do
            {:ok, entry} <- put_index(info, final) do
         {:ok, :fetched, entry}
       else
-        err -> File.rm(pending); err
+        err ->
+          File.rm(pending)
+          err
       end
     end
   end
@@ -186,7 +193,9 @@ defmodule VzBeam.Cache do
          {:ok, entry} <- put_index(info, final) do
       {:ok, :fetched, entry}
     else
-      err -> File.rm(pending); err
+      err ->
+        File.rm(pending)
+        err
     end
   end
 
@@ -196,13 +205,23 @@ defmodule VzBeam.Cache do
 
   defp put_index(info, final) do
     with {:ok, stat} <- File.stat(final) do
-      entry = %{"version" => info.version, "build" => info.build, "file" => Path.basename(final),
-                "source" => info.source, "url" => info.url, "bytes" => stat.size,
-                "fetchedAt" => DateTime.utc_now() |> DateTime.to_iso8601()}
+      entry = %{
+        "version" => info.version,
+        "build" => info.build,
+        "file" => Path.basename(final),
+        "source" => info.source,
+        "url" => info.url,
+        "bytes" => stat.size,
+        "fetchedAt" => DateTime.utc_now() |> DateTime.to_iso8601()
+      }
 
       index = read_index()
       images = Map.put(index["images"] || %{}, info.build, entry)
-      case AtomicFile.write(index_path(), Jason.encode!(Map.put(index, "images", images), pretty: true)) do
+
+      case AtomicFile.write(
+             index_path(),
+             Jason.encode!(Map.put(index, "images", images), pretty: true)
+           ) do
         :ok -> {:ok, entry}
         err -> err
       end
@@ -219,14 +238,19 @@ defmodule VzBeam.Cache do
 
   defp validate_build(b) when is_binary(b) do
     if b != "" and b not in [".", ".."] and not String.contains?(b, ["/", "\\"]),
-      do: :ok, else: {:error, :bad_build_token}
+      do: :ok,
+      else: {:error, :bad_build_token}
   end
 
   defp validate_build(_), do: {:error, :bad_build_token}
 
   defp default_deps do
-    %{image_info: &VzBeam.Sidecar.image_info/1, download: &download/2, copy: &cp_clone/2,
-      catalog: &VzBeam.Catalog.resolve/1}
+    %{
+      image_info: &VzBeam.Sidecar.image_info/1,
+      download: &download/2,
+      copy: &cp_clone/2,
+      catalog: &VzBeam.Catalog.resolve/1
+    }
   end
 
   defp cp_clone(src, dst) do
@@ -241,7 +265,17 @@ defmodule VzBeam.Cache do
   # curl's output left the user with a silent, frozen-looking terminal.
   # --proto/--proto-redir keep the request (and any redirect) on https.
   defp download(url, dst) do
-    args = ["-fL", "--progress-bar", "--proto", "=https", "--proto-redir", "=https", "-o", dst, url]
+    args = [
+      "-fL",
+      "--progress-bar",
+      "--proto",
+      "=https",
+      "--proto-redir",
+      "=https",
+      "-o",
+      dst,
+      url
+    ]
 
     case System.cmd("curl", args) do
       {_, 0} -> :ok

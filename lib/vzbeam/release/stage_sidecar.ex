@@ -22,6 +22,7 @@ defmodule VzBeam.Release.StageSidecar do
 
     File.dir?(app_dir) ||
       raise "vz sidecar staging failed: missing app dir lib/vzbeam-#{version} in #{work_dir}"
+
     dest = Path.join([app_dir, "priv", "vz"])
     File.mkdir_p!(Path.dirname(dest))
     File.cp!(product, dest)

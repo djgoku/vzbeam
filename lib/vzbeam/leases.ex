@@ -51,6 +51,7 @@ defmodule VzBeam.Leases do
   # (e.g. `5e:a:b:0:cd:ef`), while our config MAC is canonical (`5e:0a:0b:00:cd:ef`).
   # Normalize both to lowercase, zero-padded octets so they compare equal.
   defp normalize_mac(nil), do: nil
+
   defp normalize_mac(mac) do
     mac
     |> String.downcase()

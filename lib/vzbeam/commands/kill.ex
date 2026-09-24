@@ -18,13 +18,17 @@ defmodule VzBeam.Commands.Kill do
 
           case Pidfile.reap(name, deadline, @poll_ms) do
             :stopped ->
-              File.rm(Pidfile.path(name)); {:ok, ["killed ", name, "\n"]}
+              File.rm(Pidfile.path(name))
+              {:ok, ["killed ", name, "\n"]}
 
             :timeout ->
-              deps.signal.("-KILL", pid); File.rm(Pidfile.path(name)); {:ok, ["killed ", name, " (SIGKILL)\n"]}
+              deps.signal.("-KILL", pid)
+              File.rm(Pidfile.path(name))
+              {:ok, ["killed ", name, " (SIGKILL)\n"]}
           end
         else
-          File.rm(Pidfile.path(name)); {:ok, [name, " was not running (cleaned stale vm.pid)\n"]}
+          File.rm(Pidfile.path(name))
+          {:ok, [name, " was not running (cleaned stale vm.pid)\n"]}
         end
 
       _ ->
@@ -36,7 +40,9 @@ defmodule VzBeam.Commands.Kill do
 
   @doc false
   def default_deps do
-    %{signal: fn sig, pid -> System.cmd("kill", [sig, to_string(pid)], stderr_to_stdout: true) end,
-      reap_ms: @reap_ms}
+    %{
+      signal: fn sig, pid -> System.cmd("kill", [sig, to_string(pid)], stderr_to_stdout: true) end,
+      reap_ms: @reap_ms
+    }
   end
 end

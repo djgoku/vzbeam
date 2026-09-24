@@ -19,7 +19,9 @@ defmodule VzBeam.Keys do
     else
       File.mkdir_p!(dir())
 
-      case runner.("ssh-keygen", ["-t", "ed25519", "-N", "", "-C", "vzbeam", "-f", private()], stderr_to_stdout: true) do
+      case runner.("ssh-keygen", ["-t", "ed25519", "-N", "", "-C", "vzbeam", "-f", private()],
+             stderr_to_stdout: true
+           ) do
         {_, 0} -> {:ok, %{private: private(), public: public()}}
         {out, _} -> {:error, {:keygen_failed, String.trim(out)}}
       end

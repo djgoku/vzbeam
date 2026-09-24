@@ -5,7 +5,12 @@ defmodule VzBeam.LockTest do
   setup do
     home = Path.join(System.tmp_dir!(), "vzbeam-lock-#{System.unique_integer([:positive])}")
     System.put_env("VZBEAM_HOME", home)
-    on_exit(fn -> System.delete_env("VZBEAM_HOME"); File.rm_rf!(home) end)
+
+    on_exit(fn ->
+      System.delete_env("VZBEAM_HOME")
+      File.rm_rf!(home)
+    end)
+
     {:ok, home: home}
   end
 
@@ -48,7 +53,12 @@ defmodule VzBeam.LockTest do
 
   test "steals a lock held by a confirmed-dead pid" do
     File.mkdir_p!(VzBeam.Home.root())
-    File.write!(Lock.path(), Jason.encode!(%{"pid" => "999999", "startedAt" => "Sat Jan  1 00:00:00 2000"}))
+
+    File.write!(
+      Lock.path(),
+      Jason.encode!(%{"pid" => "999999", "startedAt" => "Sat Jan  1 00:00:00 2000"})
+    )
+
     assert :ok = Lock.acquire(1_000)
     :ok = Lock.release()
   end

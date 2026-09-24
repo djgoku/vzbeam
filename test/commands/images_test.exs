@@ -2,15 +2,24 @@ defmodule VzBeam.Commands.ImagesTest do
   use ExUnit.Case, async: true
   alias VzBeam.Commands.Images
 
-  @cached %{"version" => "26.5.1", "build" => "25F80", "bytes" => 16 * 1024 * 1024 * 1024, "source" => "latest"}
-  @offered [%{"version" => "26.6.1", "build" => "25G76", "url" => "https://u/a.ipsw"},
-            %{"version" => "26.5.1", "build" => "25F80", "url" => "https://u/b.ipsw"}]
+  @cached %{
+    "version" => "26.5.1",
+    "build" => "25F80",
+    "bytes" => 16 * 1024 * 1024 * 1024,
+    "source" => "latest"
+  }
+  @offered [
+    %{"version" => "26.6.1", "build" => "25G76", "url" => "https://u/a.ipsw"},
+    %{"version" => "26.5.1", "build" => "25F80", "url" => "https://u/b.ipsw"}
+  ]
 
   defp deps(overrides \\ %{}) do
     Map.merge(
-      %{list: fn -> [@cached] end,
+      %{
+        list: fn -> [@cached] end,
         remote: fn -> {:ok, @offered} end,
-        warn: fn _ -> flunk("no warning expected") end},
+        warn: fn _ -> flunk("no warning expected") end
+      },
       overrides
     )
   end
@@ -28,15 +37,19 @@ defmodule VzBeam.Commands.ImagesTest do
   test "a build both cached and offered appears once, as local" do
     assert {:ok, out} = Images.run([], deps())
     text = IO.iodata_to_binary(out)
-    assert length(String.split(text, "25F80")) == 2  # exactly one occurrence
+    # exactly one occurrence
+    assert length(String.split(text, "25F80")) == 2
     refute text =~ ~r/25F80\s+-\s+remote/
   end
 
   test "an unreachable catalog degrades to cached-only with a note, exit 0" do
     me = self()
 
-    deps = deps(%{remote: fn -> {:error, :timeout} end,
-                  warn: fn io -> send(me, {:warn, IO.iodata_to_binary(io)}) end})
+    deps =
+      deps(%{
+        remote: fn -> {:error, :timeout} end,
+        warn: fn io -> send(me, {:warn, IO.iodata_to_binary(io)}) end
+      })
 
     assert {:ok, out} = Images.run([], deps)
     text = IO.iodata_to_binary(out)
