@@ -10,6 +10,10 @@ guest powers off.
 - An OpenBSD ARM64 installation ISO such as `install79.iso`.
 - The `vz` sidecar built and signed with `mix vz.build`.
 
+Interactive installation and normal boot retain vzbeam's macOS 13 minimum. Recovery
+with `run --iso` requires macOS 15 or newer because vzbeam uses runtime USB hot-plug
+to keep the installed disk out of EFI boot selection.
+
 OpenBSD guest boot cannot be validated from a virtualized development Mac. The unit
 and native configuration checks verify the command protocol and generic EFI device
 graph; an actual install, boot, and recovery session still requires physical Apple
@@ -97,7 +101,8 @@ vzbeam run obsd --iso
 
 `--iso` implies `--gui` and cannot be combined with `--headless`. The cached medium
 is attached read-only, remains attached if the guest reboots during this invocation,
-and is detached on the next normal run.
+and is detached on the next normal run. vzbeam boots with only the recovery medium,
+then hot-plugs the installed disk before reporting that the VM started.
 
 ## One-shot recovery
 
@@ -162,8 +167,9 @@ vzbeam's VirtioFS `run --share` path is not supported for OpenBSD and is rejecte
 before launch. Use network transfer or another guest-supported method instead.
 
 `mix test` and `vzcheck` cover manifest policy, argument construction, generic EFI
-platform configuration, VirtIO block/network devices, read-only optical attachment,
-graphics/input configuration, and EFI variable-store handling without booting a VM.
+platform configuration, VirtIO block/network devices, read-only recovery-media
+attachment, delayed USB disk hot-plug configuration, graphics/input configuration,
+and EFI variable-store handling without booting a VM.
 They do not prove that a particular OpenBSD ISO installs, boots, or selects recovery
 media. Those checks belong to the physical Apple Silicon acceptance gate.
 
