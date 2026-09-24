@@ -8,8 +8,12 @@ Host: MacBook Neo (`Mac17,5`), Apple A18 Pro, 8 GB RAM
 
 Host OS: macOS 27.2 (`26B5091g`), `arm64`
 
+Parity host: Mac Studio (`Mac15,14`), Apple M3 Ultra, macOS 27.0 (`26A428`) — see
+[Mac Studio parity checks](#mac-studio-parity-checks)
+
 This record separates physical VM observations from non-booting configuration checks.
-`PASS`, `FAIL`, and `DEFERRED` describe only work actually performed on this host.
+`PASS`, `FAIL`, and `DEFERRED` describe only work actually performed on the host named
+for each section; every section before the Mac Studio one ran on the MacBook Neo.
 
 ## Host and media preconditions
 
@@ -166,14 +170,121 @@ Commands:
   temporary NVRAM cleanup, ISO-only recovery storage, explicit XHCI configuration,
   installation storage, normal storage, graphics, input, network, and parser checks.
 
-## Deferred parity checks
+## Parity checks moved to a second host
 
-- **DEFERRED** — physical macOS restore, run, and VirtioFS share regression. No macOS
-  bundle was present on this host, and a new restore is a separate long-running hardware
-  operation rather than an OpenBSD acceptance blocker.
-- **DEFERRED** — physically running two macOS guests and rejecting a third while an
-  OpenBSD guest is present. The guest-slot policy remains covered by the automated suite,
-  but the three-VM hardware setup was not executed.
+No macOS bundle was present on the MacBook Neo, so the macOS run/share regression and
+the macOS guest-slot check (two macOS guests running, a third rejected, OpenBSD not
+counted) were not executed here. Both ran on the Mac Studio below.
 
 No installation, normal-boot, cached-recovery, one-shot-recovery, clone, graphical, or
 disk-growth acceptance item remains deferred.
+
+## Mac Studio parity checks
+
+Date: 2026-09-24
+
+Host: Mac Studio (`Mac15,14`), Apple M3 Ultra
+
+Host OS: macOS 27.0 (`26A428`), `arm64`
+
+`VZBEAM_HOME` is an existing external-SSD home created by earlier vzbeam releases. It
+holds a macOS 26.6.1 (`25G76`) base, `tahoe`, whose manifest predates this branch, and
+the installed release's protocol-1 sidecar at `$VZBEAM_HOME/bin/vz`.
+
+### Branch build isolation
+
+- **PASS** — the branch sidecar was built into a separate home so the installed
+  release's sidecar stayed untouched, and it reported protocol 2:
+
+  ```sh
+  VZBEAM_HOME="$HOME/vzbeam-branch" mix vz.build
+  ~/vzbeam-branch/bin/vz --version    # {"protocol":2,"type":"version"}
+  ```
+
+- **PASS** — before `VZBEAM_VZ` was set, the branch engine resolved the protocol-1
+  `$VZBEAM_HOME/bin/vz` and refused to proceed:
+
+  ```text
+  new: sidecar protocol 1 is incompatible with required protocol 2; rebuild it (`mix vz.build`)
+  ```
+
+  The subsequent `new smoke tahoe` succeeded, so the refused attempt left no bundle or
+  pending directory behind.
+- All following commands ran with `VZBEAM_VZ="$HOME/vzbeam-branch/bin/vz"`.
+
+### macOS regression
+
+Commands:
+
+```sh
+./vzbeam new smoke tahoe
+./vzbeam run smoke --headless --share apps=/Volumes/Extreme-SSD/vzbeam/apps
+./vzbeam ssh smoke -- 'mkdir -p apps && mount_virtiofs apps apps && ls apps'
+./vzbeam stop smoke
+./vzbeam rm smoke
+```
+
+- **PASS** — the branch cloned the pre-existing macOS 26.6.1 base.
+- **PASS** — the clone booted headless and accepted SSH with the baked key.
+- **PASS** — the guest mounted the VirtioFS share by tag and listed the host folder.
+- **PASS** — `vzbeam stop` shut the guest down gracefully, and `vzbeam rm` removed it.
+
+### macOS 27 restore
+
+- **FAIL, environmental** — the first `./vzbeam new base27 --image latest` stopped during
+  the macOS 27.0 (`26A428`) IPSW download, while the OpenBSD installer below was being
+  started:
+
+  ```text
+  curl: (18) transfer closed with 3886141629 bytes remaining to read
+  new failed: {:download_failed, "curl exited 18"}
+  ```
+
+  vzbeam removed the partial download and created no bundle. The cause was not isolated
+  (the CDN closing the connection, or the host network changing as the first NAT VM
+  started). The downloader has no retry or resume, so the retry restarts from zero.
+- **PASS** — rerunning the same command downloaded the full IPSW, cached it, and
+  restored a macOS 27.0 guest on the macOS 27.0 host:
+
+  ```text
+  fetched 27.0.0 (26A428)
+  restoring... 100%
+  created base27 (cpu=4 mem=8G disk=64G)
+  ```
+
+  `base27` was left unbooted as a fixture for macOS 27 guest-provisioning work.
+
+### OpenBSD on a second host
+
+- **PASS** — `install79.iso` downloaded on the Studio matched the SHA256 recorded above.
+- **PASS** — `./vzbeam new obsd --iso ~/Downloads/install79.iso` completed an
+  interactive installation ending in `halt -p`; `vzbeam ls` reports `obsd` as
+  OpenBSD 7.9 with 4 CPUs, 8 GB memory, and a 64 GB disk.
+- **PASS** — first GUI boot, SSH key installation, the `doas` shutdown rule, and a
+  graceful `vzbeam stop obsd`.
+
+### macOS guest slots
+
+Commands:
+
+```sh
+./vzbeam new cap1 tahoe && ./vzbeam new cap2 tahoe && ./vzbeam new cap3 tahoe
+./vzbeam run cap1 --headless && ./vzbeam run cap2 --headless
+./vzbeam run cap3 --headless
+./vzbeam stop cap1 && ./vzbeam stop cap2
+./vzbeam run obsd --headless && ./vzbeam run cap1 --headless && ./vzbeam run cap2 --headless
+./vzbeam run cap3 --headless
+./vzbeam ls
+```
+
+- **PASS** — with `cap1` and `cap2` running, `run cap3` was refused:
+
+  ```text
+  run: at capacity (2 macOS VMs already running); stop one first
+  ```
+
+- **PASS** — with `obsd` started first, `cap1` and `cap2` both still started, so the
+  OpenBSD guest did not consume a macOS slot.
+- **PASS** — `run cap3` was then refused with the same message, and `vzbeam ls` showed
+  `obsd`, `cap1`, and `cap2` running.
+- **PASS** — all three guests stopped, and the `cap1`–`cap3` clones were removed.
