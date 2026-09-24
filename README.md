@@ -44,8 +44,8 @@ An image `<spec>` (for `fetch` and `new --image`) is one of:
 - a **local path** to an `.ipsw`
 - an **`https://` URL** to an `.ipsw` — downloaded (with a progress bar) and cached; re-fetching the
   same URL is a no-op
-- a cached **build id** from `vzbeam images` (e.g. `26A5368g`, case-insensitive) — reused straight
-  from the cache, no download
+- a **build id** from `vzbeam images` (e.g. `26A5368g`, case-insensitive) — reused when cached, or
+  resolved through Apple's IPSW catalog and downloaded when Apple still offers it
 
 All four resolve to the macOS IPSW cache, keyed by build, so the disk is never duplicated.
 OpenBSD uses a separate content-addressed ISO cache under `$VZBEAM_HOME/cache/iso`; `new --iso`
@@ -130,7 +130,7 @@ plain repo URL works):
 
 ```sh
 MISE_AQUA_REGISTRIES=https://github.com/djgoku/vzbeam \
-  mise install aqua:djgoku/vzbeam@latest        # or @0.1.0 for a specific release
+  mise install aqua:djgoku/vzbeam@latest        # or @0.3.1 for a specific release
 ```
 
 mise verifies the download against the GitHub asset digest and installs it under its data dir
@@ -152,8 +152,9 @@ vzbeam run obsd --iso                       # cached installer ISO for one recov
 vzbeam run obsd --iso /path/alternate.iso   # one-shot recovery media, not cached
 ```
 
-Both recovery forms imply `--gui`, reject `--headless`, attach the ISO read-only, and leave it
-detached on the next normal run. The OpenBSD `--share` path is not supported. See
+Both recovery forms require macOS 15 or newer, imply `--gui`, reject `--headless`, attach the ISO
+read-only, and leave it detached on the next normal run. Interactive installation and normal boot
+retain the macOS 13 minimum. The OpenBSD `--share` path is not supported. See
 [docs/openbsd.md](docs/openbsd.md) for SSH key setup, the narrow `doas` shutdown rule, disk
 growth, media verification, and the physical-hardware validation boundary.
 
@@ -173,9 +174,9 @@ Then install the baked SSH key, and — so `vzbeam stop` can shut the guest down
 
 ```sh
 vzbeam ip base                                                  # note the IP
-ssh-copy-id -i "$VZBEAM_HOME/keys/id_ed25519.pub" admin@<ip>    # one-time key install
+ssh-copy-id -i "${VZBEAM_HOME:-$HOME/.local/share/vzbeam}/keys/id_ed25519.pub" admin@<ip>
 # in the guest (stop runs `sudo -n shutdown -h now` over SSH):
-echo 'admin ALL=(ALL) NOPASSWD: /sbin/shutdown' | sudo tee /etc/sudoers.d/vzbeam-shutdown
+echo 'admin ALL=(root) NOPASSWD: /sbin/shutdown -h now' | sudo tee /etc/sudoers.d/vzbeam-shutdown
 ```
 
 This persists on the base and is inherited by every CoW clone — paid once. (`vzbeam kill` force-stops a
@@ -219,8 +220,8 @@ Three limits worth knowing:
 `mix test` validates CLI parsing, manifests, caching, lifecycle policy, sidecar arguments, and
 cleanup. The signed native `vzcheck` additionally asks Virtualization.framework to validate the
 macOS and generic-EFI configurations without starting a guest. Its OpenBSD coverage includes the
-generic EFI platform and variable store, VirtIO block and network devices, graphics/input, and
-read-only optical-media attachment.
+generic EFI platform and variable store, VirtIO block and network devices, graphics/input,
+read-only recovery-media attachment, and delayed USB disk hot-plug configuration.
 
 Those checks do **not** validate an actual install or boot. A virtualized development Mac cannot
 exercise the guest lifecycle, so the physical **Apple Silicon** gate separately covers macOS
@@ -233,4 +234,5 @@ EFI selected its recovery media. Hardware results live in `docs/superpowers/resu
 
 - OpenBSD install, recovery, and operation: [docs/openbsd.md](docs/openbsd.md)
 - Design spec: `docs/superpowers/specs/2026-06-21-vzbeam-design.md`
+- OpenBSD design spec: `docs/superpowers/specs/2026-09-21-openbsd-iso-support-design.md`
 - Implementation plans: `docs/superpowers/plans/`
