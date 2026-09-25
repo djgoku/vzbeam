@@ -25,9 +25,9 @@ gh api --method POST "repos/{owner}/{repo}/releases/generate-notes" \
 """
 
 [tasks.ci]
-description = "Install deps and run the test suite"
+description = "Install deps and run the test suite, then the release task's mock-based unit test"
 depends = ["deps"]
-run = "mix test"
+run = ["mix test", "bash test/ci/release_test.sh"]
 
 [tasks.build]
 description = "Build the Burrito single-file release (carries the signed vz sidecar)"
