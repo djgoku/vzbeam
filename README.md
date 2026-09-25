@@ -92,11 +92,32 @@ xattr -dr com.apple.quarantine ./vzbeam
 `VZBEAM_DEBUG=1 vzbeam <cmd>` prints which `vz` sidecar was selected. The bundled sidecar is
 overridable by `$VZBEAM_VZ` or a `mix vz.build` install in `$VZBEAM_HOME/bin/vz`.
 
-## Install a prebuilt `vzbeam` via mise/aqua
+## Install a prebuilt `vzbeam` via mise
 
-Rather than build, install a released binary straight from GitHub Releases with mise — point
-it at this repo's single-file aqua registry (`registry.yaml` at the repo root, so the plain
-repo URL works):
+Rather than build, install a released binary straight from GitHub Releases with mise. Both
+routes below install the same `vzbeam` asset, quarantine-free, so the ad-hoc-signed binary runs
+as-is. Apple-Silicon macOS only.
+
+### packslip (0.3.2 and later)
+
+Each release from 0.3.2 on carries a signed [packslip](https://packslip.dev) manifest,
+`packslip.sigstore.json`. With mise 2026.9.2 or newer:
+
+```sh
+mise use -g packslip:github.com/djgoku/vzbeam        # or @0.3.2 for a specific release
+```
+
+mise checks the manifest's signature against this repository's GitHub Actions identity, then
+the download's digest and size, before installing (see mise's
+[packslip backend](https://mise.jdx.dev/dev-tools/backends/packslip.html)). `latest` honours
+mise's `minimum_release_age` (24 hours by default), so a new release can take a day to become
+`latest`; an exact version such as `@0.3.2` installs as soon as it is published. Each release's
+binary also carries GitHub build provenance: `gh attestation verify vzbeam --repo djgoku/vzbeam`.
+
+### aqua (every release)
+
+Point mise at this repo's single-file aqua registry (`registry.yaml` at the repo root, so the
+plain repo URL works):
 
 ```sh
 MISE_AQUA_REGISTRIES=https://github.com/djgoku/vzbeam \
@@ -105,8 +126,10 @@ MISE_AQUA_REGISTRIES=https://github.com/djgoku/vzbeam \
 
 mise verifies the download against the GitHub asset digest and installs it under its data dir
 (`mise which aqua:djgoku/vzbeam` prints the path; `mise use aqua:djgoku/vzbeam@latest` adds it
-to a project). The install is quarantine-free, so the ad-hoc-signed binary runs as-is.
-Apple-Silicon macOS only, and it needs a published release to install from.
+to a project).
+
+Release candidates (`X.Y.Z-rc.N`) are GitHub prereleases: neither route picks one for `latest`,
+but either installs it by exact version.
 
 ## First boot (one-time per base)
 

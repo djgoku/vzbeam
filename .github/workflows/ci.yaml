@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 0
       - uses: jdx/mise-action@v4
         with:
-          version: 2026.8.3
+          version: 2026.9.12
       - name: Assert Apple Silicon
         run: |
           arch="$(uname -m)"
@@ -27,13 +27,19 @@ jobs:
           test "${arch}" = "arm64"
       - run: mise run ci
 
+  # Publishes on a version bump pushed to main. A workflow_dispatch run from a branch publishes a
+  # release candidate: `mise run release` refuses a stable version off main, so the branch sets a
+  # pre-release version (0.3.2-rc.1) that becomes a GitHub prerelease and never takes Latest.
+  # Keep signing in this workflow file: mise's signer continuity pins the workflow path.
   release:
     needs: [test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: macos-26
     timeout-minutes: 30
     permissions:
       contents: write
+      id-token: write # keyless packslip signing + build provenance
+      attestations: write # build provenance
     concurrency:
       group: release-${{ github.ref }}
       cancel-in-progress: false
@@ -45,7 +51,7 @@ jobs:
           fetch-depth: 0
       - uses: jdx/mise-action@v4
         with:
-          version: 2026.8.3
+          version: 2026.9.12
       - name: Assert Apple Silicon
         run: |
           arch="$(uname -m)"
@@ -55,11 +61,18 @@ jobs:
         run: |
           xcode-select -p
           xcrun swift --version
-      - run: mise run release
+      - id: release
+        run: mise run release
+      # The packslip's provenance link points at this attestation (by the binary's digest).
+      - if: steps.release.outputs.created == 'true'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: burrito_out/vzbeam
 
-  # Exercises the full release path (version -> build -> checksum) on a fresh
-  # runner for every PR, stopping before publish. This is what catches release
-  # breakage before merge, since the `release` job above only runs on push to main.
+  # Exercises the full release path (version -> build -> checksum -> packslip sign + verify, with
+  # a throwaway key and no Rekor entry) on a fresh runner for every PR, stopping before publish.
+  # This is what catches release breakage before merge, since the `release` job above only
+  # publishes on push to main or a manual dispatch.
   release-dry-run:
     needs: [test]
     if: github.event_name == 'pull_request'
@@ -71,7 +84,7 @@ jobs:
           fetch-depth: 0
       - uses: jdx/mise-action@v4
         with:
-          version: 2026.8.3
+          version: 2026.9.12
       - name: Assert Apple Silicon
         run: |
           arch="$(uname -m)"
