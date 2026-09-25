@@ -1,0 +1,14 @@
+# packslip input manifest for `packslip create --manifest release.toml` (see mise-tasks/release).
+# Not the signed document: create resolves this into burrito_out/packslip/packslip.sigstore.json,
+# which is published beside the `vzbeam` asset. Version, URLs, tag, and commit are passed as flags.
+#
+# The asset name `vzbeam` says nothing about its format or platform, so both are explicit here:
+# without os/arch, packslip records an unrestricted artifact that mise would offer on any host.
+project = "github.com/djgoku/vzbeam"
+
+[[artifact]]
+path = "burrito_out/vzbeam"
+os = "darwin"
+arch = "aarch64"
+format = "raw"
+bin = ["vzbeam"]

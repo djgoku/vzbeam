@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
-# mise task: build, checksum, and (only in GitHub Actions) publish a GitHub Release.
-#MISE description="Build, checksum, and publish a GitHub Release on a version bump"
-#USAGE flag "--dry-run" help="Build + checksum on this runner but never publish (PR validation)"
+# mise task: build, checksum, sign a packslip, and (only in GitHub Actions) publish a GitHub Release.
+#MISE description="Build, checksum, sign, and publish a GitHub Release on a version bump"
+#USAGE flag "--dry-run" help="Build, checksum, and key-sign on this runner but never publish (PR validation)"
+# Runs under the macOS runner's Bash 3.2: no associative arrays, and no "${arr[@]}" of an empty array.
 set -euo pipefail
 
 VERSION="$(mise run version)"
 TAG="v${VERSION}"
+REPO="${GITHUB_REPOSITORY:-djgoku/vzbeam}"
+BUNDLE_DIR="burrito_out/packslip"
+BUNDLE="${BUNDLE_DIR}/packslip.sigstore.json"
 echo "release: version=${VERSION} tag=${TAG}"
 
 in_ci() { [ -n "${GITHUB_ACTIONS:-}" ]; }
 dry_run() { [ "${usage_dry_run:-false}" = "true" ]; }
+# A SemVer pre-release suffix (0.3.2-rc.1) publishes a GitHub prerelease that never takes Latest.
+prerelease() { [[ "$VERSION" == *-* ]]; }
 
 abort() {
   echo "release: ABORT — $*" >&2
@@ -50,22 +56,60 @@ release_state() {
     return
   fi
 
-  if grep -Fxq 'vzbeam' <<<"$names" && grep -Fxq 'SHA256SUMS' <<<"$names"; then
+  if grep -Fxq 'vzbeam' <<<"$names" && grep -Fxq 'SHA256SUMS' <<<"$names" &&
+    grep -Fxq 'packslip.sigstore.json' <<<"$names"; then
     echo complete
   else
     echo partial
   fi
 }
 
+# Sign burrito_out/vzbeam into $BUNDLE and verify the bundle against the local file. With a key
+# argument, sign with that throwaway key and keep the signature out of the public Rekor log;
+# without one, sign keylessly with this GitHub Actions job's OIDC identity (id-token: write).
+sign_packslip() {
+  local key="${1:-}"
+  local digest
+  digest="$(shasum -a 256 burrito_out/vzbeam | cut -d' ' -f1)"
+  local args=(
+    create --manifest release.toml --out "$BUNDLE_DIR"
+    --version "$VERSION"
+    --url-base "https://github.com/${REPO}/releases/download/${TAG}"
+    --notes-url "https://github.com/${REPO}/releases/tag/${TAG}"
+    --source-repo "https://github.com/${REPO}" --tag "$TAG" --commit "${GITHUB_SHA:-$(git rev-parse HEAD)}"
+    # The CI workflow attests this digest after publishing; GitHub serves it at this URL.
+    --provenance "vzbeam=https://api.github.com/repos/${REPO}/attestations/sha256:${digest}"
+  )
+  mkdir -p "$BUNDLE_DIR"
+  rm -f "$BUNDLE"
+  if [ -n "$key" ]; then
+    packslip "${args[@]}" --key "$key" --no-log
+    packslip verify "$BUNDLE" --pubkey "${key%.key}.pub" --allow-unlogged --artifact burrito_out/vzbeam
+  else
+    packslip "${args[@]}"
+    packslip verify "$BUNDLE" --identity-prefix "https://github.com/${REPO}/" \
+      --issuer https://token.actions.githubusercontent.com --artifact burrito_out/vzbeam
+  fi
+}
+
 if ! in_ci || dry_run; then
   mise run build
   mise run checksum
+  keydir="$(mktemp -d)"
+  trap 'rm -rf "$keydir"' EXIT
+  packslip keygen --out "${keydir}/release.key"
+  sign_packslip "${keydir}/release.key"
   if dry_run; then
-    echo "release: dry-run — built + checksummed on this runner, not publishing"
+    echo "release: dry-run — built, checksummed, and key-signed on this runner, not publishing"
   else
-    echo "release: built + checksummed; not publishing (not in GitHub Actions)"
+    echo "release: built, checksummed, and key-signed; not publishing (not in GitHub Actions)"
   fi
   exit 0
+fi
+
+# A workflow_dispatch run from a branch may publish only a release candidate.
+if ! prerelease && [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+  abort "${TAG} is a stable version; stable releases publish only from main (this run: ${GITHUB_REF:-unknown ref})"
 fi
 
 tag_output="$(gh api "repos/{owner}/{repo}/git/ref/tags/${TAG}" 2>&1)" && tag_rc=0 || tag_rc=$?
@@ -98,11 +142,21 @@ fi
 
 mise run build
 mise run checksum
+# Signed before the release exists: a signing or verification failure publishes nothing.
+sign_packslip
 
-if gh release create "${TAG}" --target "${GITHUB_SHA}" --latest \
+if prerelease; then
+  latest_flags=(--prerelease --latest=false)
+else
+  latest_flags=(--latest)
+fi
+
+if gh release create "${TAG}" --target "${GITHUB_SHA}" "${latest_flags[@]}" \
   --title "${TAG}" --generate-notes \
-  burrito_out/vzbeam burrito_out/SHA256SUMS; then
+  burrito_out/vzbeam burrito_out/SHA256SUMS "$BUNDLE"; then
   echo "release: created ${TAG}"
+  # Exactly one key=value line: stray output corrupts $GITHUB_OUTPUT. Gates the attestation step.
+  echo "created=true" >>"${GITHUB_OUTPUT:-/dev/null}"
   exit 0
 fi
 
