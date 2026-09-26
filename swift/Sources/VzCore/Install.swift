@@ -22,6 +22,7 @@ public struct InstallOpts {
     public let width: Int
     public let height: Int
     public let parentPID: pid_t
+    public let name: String?
 }
 
 public func parseInstallOpts(_ args: [String]) throws -> InstallOpts {
@@ -43,7 +44,7 @@ public func parseInstallOpts(_ args: [String]) throws -> InstallOpts {
     let (width, height) = try installResolution(a.value("resolution"))
     return InstallOpts(guest: guest, iso: iso, disk: disk, nvram: nvram,
                        cpu: cpu, mem: mem, width: width, height: height,
-                       parentPID: parentPID)
+                       parentPID: parentPID, name: nonempty(a.value("name")))
 }
 
 private func nonempty(_ value: String?) -> String? {
@@ -229,7 +230,8 @@ private final class InstallSession: NSObject, VZVirtualMachineDelegate {
     // Closing the window only hides it, as with `run --gui`; Ctrl-C in the terminal (SIGINT),
     // SIGTERM/SIGHUP, or the parent exiting is what cancels the installation.
     private func runGUI(vm: VZVirtualMachine) {
-        let window = VMWindow(vm: vm, title: "vzbeam OpenBSD installer", width: run.width, height: run.height)
+        let window = VMWindow(vm: vm, title: vmWindowTitle("vzbeam OpenBSD installer", name: install.name),
+                              width: run.width, height: run.height)
         self.window = window
         window.run()
     }

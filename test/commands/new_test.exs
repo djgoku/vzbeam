@@ -234,7 +234,7 @@ defmodule VzBeam.Commands.NewTest do
       base
       | progress: fn io -> send(parent, {:trace, :progress, IO.iodata_to_binary(io)}) end,
         install: fn opts, report ->
-          send(parent, {:trace, :install})
+          send(parent, {:trace, :install, opts.name})
           base.install.(opts, report)
         end
     }
@@ -257,7 +257,8 @@ defmodule VzBeam.Commands.NewTest do
     text = IO.iodata_to_binary(instructions)
     assert String.starts_with?(text, "\n") and String.ends_with?(text, "\n\n")
     assert for(<<c <- text>>, c >= 128, do: c) == [], "installer instructions contain non-ASCII"
-    assert_receive {:trace, :install}
+    # The installer window shows the bundle name in its title.
+    assert_receive {:trace, :install, "obsd"}
   end
 
   test "--iso validates media combinations, user, resolution, and pending names", %{home: home} do

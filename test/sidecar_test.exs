@@ -49,6 +49,7 @@ defmodule VzBeam.SidecarTest do
 
   @restore_args ~w(--ipsw x --disk d --aux a --disk-size 1 --cpu 1 --mem 1)
   @install %{
+    name: "obsd",
     iso: "i",
     disk: "d",
     nvram: "n",
@@ -215,6 +216,9 @@ defmodule VzBeam.SidecarTest do
     argv = File.read!(argv_file) |> String.split("\n", trim: true)
     parent_index = Enum.find_index(argv, &(&1 == "--parent-pid"))
     assert Enum.at(argv, parent_index + 1) == System.pid()
+    # ...and the bundle name, which the installer window shows in its title.
+    name_index = Enum.find_index(argv, &(&1 == "--name"))
+    assert name_index && Enum.at(argv, name_index + 1) == "obsd"
   end
 
   test "install error dominates a prior success-looking event" do

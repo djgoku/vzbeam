@@ -292,6 +292,7 @@ defmodule VzBeam.Commands.New do
              {:ok, result} <-
                deps.install.(
                  %{
+                   name: name,
                    iso: Path.join(IsoCache.dir(), entry["file"]),
                    disk: disk,
                    nvram: nvram,

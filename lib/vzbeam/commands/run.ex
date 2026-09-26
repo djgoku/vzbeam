@@ -213,7 +213,10 @@ defmodule VzBeam.Commands.Run do
         to_string(m["memoryBytes"]),
         mode_flag(opts),
         "--resolution",
-        Defaults.resolve(opts.resolution, :resolution)
+        Defaults.resolve(opts.resolution, :resolution),
+        # Shown in the window title, so several open VMs can be told apart.
+        "--name",
+        name
       ] ++ share_args(share) ++ iso_args(iso)
   end
 

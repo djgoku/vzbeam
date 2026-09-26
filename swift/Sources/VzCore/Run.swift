@@ -49,7 +49,8 @@ public func parseRunOpts(_ args: [String]) throws -> RunOpts {
                    mac: mac, disk: disk, aux: aux, nvram: nvram, iso: iso,
                    cpu: cpu, mem: mem, gui: a.has("gui"), width: w, height: h,
                    share: share, createNVRAM: false,
-                   recovery: guest == .openbsd && iso != nil)
+                   recovery: guest == .openbsd && iso != nil,
+                   name: a.value("name").flatMap { $0.isEmpty ? nil : $0 })
 }
 
 private func parseResolution(_ s: String) -> (Int, Int) {
@@ -164,7 +165,7 @@ final class RunSession: NSObject, VZVirtualMachineDelegate {
     }
 
     private func runGUI(vm: VZVirtualMachine) {
-        let win = VMWindow(vm: vm, title: "vzbeam", width: opts.width, height: opts.height)
+        let win = VMWindow(vm: vm, title: vmWindowTitle("vzbeam", name: opts.name), width: opts.width, height: opts.height)
         window = win
         win.run()
     }

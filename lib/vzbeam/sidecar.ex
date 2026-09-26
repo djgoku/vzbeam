@@ -191,7 +191,10 @@ defmodule VzBeam.Sidecar do
       "--resolution",
       opts.resolution,
       "--parent-pid",
-      System.pid()
+      System.pid(),
+      # Shown in the installer window's title.
+      "--name",
+      opts.name
     ]
 
     with {:ok, events} <- stream("install", args, on_event),

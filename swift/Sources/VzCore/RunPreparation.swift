@@ -40,7 +40,8 @@ public func prepareRunOptions(
         height: options.height,
         share: options.share,
         createNVRAM: true,
-        recovery: options.recovery
+        recovery: options.recovery,
+        name: options.name
     )
 
     return RunPreparation(options: prepared, temporaryDirectory: directory)

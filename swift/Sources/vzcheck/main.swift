@@ -84,6 +84,14 @@ if let recovery = try? parseRunOpts(runBase + ["--guest", "openbsd",
 } else {
     check("run.openbsd.recovery", false)
 }
+let namedRun = try? parseRunOpts(runBase + ["--guest", "openbsd", "--nvram", "/tmp/nvram.bin",
+                                               "--name", "obsd"])
+check("run.name", namedRun?.name == "obsd")
+check("run.name.absent", (try? parseRunOpts(runBase + ["--guest", "openbsd", "--nvram", "/tmp/nvram.bin"]))?.name == nil)
+
+// --- Window title ---
+check("title.named", vmWindowTitle("vzbeam", name: "obsd") == "obsd — vzbeam")
+check("title.unnamed", vmWindowTitle("vzbeam OpenBSD installer", name: nil) == "vzbeam OpenBSD installer")
 
 // --- Install parsing ---
 let installArgs = ["--guest", "openbsd", "--iso", "/tmp/install.iso",
@@ -97,6 +105,7 @@ if let install = try? parseInstallOpts(installArgs) {
     check("install.nvram", install.nvram == "/tmp/install-nvram.bin")
     check("install.dimensions", install.width == 1024 && install.height == 768)
     check("install.parent", install.parentPID == getpid())
+    check("install.name.absent", install.name == nil)
 
     let installRun = RunOpts(guest: install.guest, machineId: genericMid, hardwareModel: nil,
                              mac: "5e:11:22:33:44:55", disk: install.disk, aux: nil,
@@ -110,6 +119,7 @@ if let install = try? parseInstallOpts(installArgs) {
 }
 
 func rejectsInstall(_ args: [String]) -> Bool { (try? parseInstallOpts(args)) == nil }
+check("install.name", (try? parseInstallOpts(installArgs + ["--name", "obsd"]))?.name == "obsd")
 check("install.reject.missing-iso", rejectsInstall(installArgs.filter { $0 != "--iso" && $0 != "/tmp/install.iso" }))
 check("install.reject.macos", rejectsInstall(installArgs.map { $0 == "openbsd" ? "macos" : $0 }))
 check("install.reject.missing-nvram", rejectsInstall(installArgs.filter { $0 != "--nvram" && $0 != "/tmp/install-nvram.bin" }))

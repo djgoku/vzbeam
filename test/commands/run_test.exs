@@ -289,6 +289,12 @@ defmodule VzBeam.Commands.RunTest do
     refute "--iso" in argv
   end
 
+  # The sidecar puts the bundle name in the window title, so several open VMs can be told apart.
+  test "passes the bundle name to the sidecar for the window title" do
+    assert arg_after(capture_argv(["obsd", "--gui"], "obsd"), "--name") == "obsd"
+    assert arg_after(capture_argv(["obsd", "--iso"], "obsd"), "--name") == "obsd"
+  end
+
   test "bare recovery uses the cached ISO and forces GUI" do
     manifest = Jason.decode!(File.read!(VzBeam.Manifest.path("obsd")))
     expected = Path.join(IsoCache.dir(), manifest["image"]["file"])

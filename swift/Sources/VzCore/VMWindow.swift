@@ -1,6 +1,13 @@
 import Virtualization
 import AppKit
 
+/// "obsd — vzbeam": the bundle name first, so several open VMs (each its own `vz` app in the
+/// Dock) can be told apart in Mission Control and the Dock icon's window list.
+public func vmWindowTitle(_ role: String, name: String?) -> String {
+    guard let name else { return role }
+    return "\(name) — \(role)"
+}
+
 /// The VM display window shared by `run --gui` and the OpenBSD installer. Closing it only
 /// hides it — the guest keeps running — and returning to the app brings the same window
 /// (still attached to the VM) back; stopping the guest is the session's job, not the window's.
