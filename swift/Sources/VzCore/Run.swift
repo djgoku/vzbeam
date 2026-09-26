@@ -28,11 +28,12 @@ private func parseResolution(_ s: String) -> (Int, Int) {
     return (1920, 1200)
 }
 
-final class RunSession: NSObject, VZVirtualMachineDelegate {
+final class RunSession: NSObject, VZVirtualMachineDelegate, NSApplicationDelegate {
     private let opts: RunOpts
     private var vm: VZVirtualMachine?
     private var finished = false           // only touched on .main → no lock needed
     private var sig: DispatchSourceSignal?
+    private var window: NSWindow?          // --gui only; kept across close so a Dock click can reopen it
 
     init(opts: RunOpts) { self.opts = opts }
 
@@ -87,12 +88,32 @@ final class RunSession: NSObject, VZVirtualMachineDelegate {
     private func runGUI(vm: VZVirtualMachine) {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)   // .regular gives a Dock icon so the first-boot window is findable
+        app.delegate = self                 // weak; liveRun keeps self alive
         let view = VZVirtualMachineView(); view.virtualMachine = vm
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: max(opts.width / 2, 640), height: max(opts.height / 2, 400)),
-                           styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         win.title = "vzbeam"; win.contentView = view
+        win.collectionBehavior.insert(.fullScreenPrimary)   // green button: full screen (Option-click: fill)
+        win.isReleasedWhenClosed = false    // close only hides it; the VM keeps running behind it
+        window = win
         win.makeKeyAndOrderFront(nil); app.activate(ignoringOtherApps: true)
         app.run()
+    }
+
+    // NSApplicationDelegate: closing the window leaves the guest running, so returning to the app
+    // brings the same window (still attached to the VM) back. Switching to it (Cmd-Tab, Dock,
+    // Mission Control) fires didBecomeActive, which, as in other apps, leaves a minimized window
+    // in the Dock. A Dock-icon click fires reopen (alone, if the app is already frontmost, as it
+    // is right after the close) and restores the window whether closed or minimized.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard let window, !window.isVisible, !window.isMiniaturized else { return }
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard let window, !window.isVisible else { return false }
+        if window.isMiniaturized { window.deminiaturize(nil) } else { window.makeKeyAndOrderFront(nil) }
+        return false
     }
 }
 

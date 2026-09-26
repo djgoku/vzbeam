@@ -38,7 +38,7 @@ defmodule VzBeam.Commands.Run do
       argv = build_argv(vz, name, m, opts, share)
 
       case launch(name, argv, run_log, deps) do
-        {:ok, pid} -> finish(name, pid, run_log)
+        {:ok, pid} -> finish(name, pid, run_log, opts[:gui] == true)
         {:spawn_exited, pid} -> classify_failure(name, pid, run_log)
         {:error, reason} -> error({:error, reason})
       end
@@ -77,17 +77,30 @@ defmodule VzBeam.Commands.Run do
   @spec count_running() :: non_neg_integer
   def count_running, do: Enum.count(Home.bundles(), &Pidfile.running?/1)
 
-  defp finish(name, pid, run_log) do
+  defp finish(name, pid, run_log, gui) do
     case await_started(run_log, pid, @handshake_ms) do
       {:ok, _} ->
         {:ok, ["started ", name, " (pid ", Integer.to_string(pid),
-               ") - networking; try `vzbeam ip ", name, "` or `vzbeam ssh ", name, "`\n"]}
+               ") - networking; try `vzbeam ip ", name, "` or `vzbeam ssh ", name, "`\n",
+               gui_hint(name, gui)]}
 
       {:error, _reason} = err ->
         cleanup(name, pid)
         started_error(err, run_log)
     end
   end
+
+  # The window's close button only hides it; the sidecar reopens it when its app is reactivated.
+  defp gui_hint(_name, false), do: []
+
+  defp gui_hint(name, true),
+    do: [
+      "closing the window leaves ",
+      name,
+      " running: switch back to `vz` (Dock or Cmd-Tab) to reopen it; `vzbeam stop ",
+      name,
+      "` shuts it down\n"
+    ]
 
   @spec await_started(Path.t(), pos_integer, pos_integer) :: {:ok, pos_integer} | {:error, term}
   def await_started(run_log, pid, timeout_ms) do

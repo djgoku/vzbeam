@@ -81,7 +81,27 @@ defmodule VzBeam.Commands.RunTest do
 
     assert {:ok, msg} = Run.run(["dev"], deps(fn _argv, _log -> {:ok, pid} end))
     assert IO.iodata_to_binary(msg) =~ "started dev"
+    refute IO.iodata_to_binary(msg) =~ "closing the window"
     assert {:ok, %{"pid" => ^pid}} = VzBeam.Pidfile.read("dev")
+  end
+
+  test "--gui start explains that closing the window leaves the VM running" do
+    {out, 0} = System.cmd("sh", ["-c", "sleep 30 >/dev/null 2>&1 & echo $!"])
+    pid = out |> String.trim() |> String.to_integer()
+
+    on_exit(fn ->
+      System.cmd("kill", ["-TERM", Integer.to_string(pid)], stderr_to_stdout: true)
+    end)
+
+    File.write!(
+      Path.join([System.get_env("VZBEAM_HOME"), "dev", "run.log"]),
+      ~s({"type":"started","pid":#{pid}}\n)
+    )
+
+    assert {:ok, msg} = Run.run(["dev", "--gui"], deps(fn _argv, _log -> {:ok, pid} end))
+    msg = IO.iodata_to_binary(msg)
+    assert msg =~ "closing the window leaves dev running"
+    assert msg =~ "`vzbeam stop dev`"
   end
 
   test "await_started: started+alive -> ok; started+dead -> exited_early; error -> vz; timeout" do
