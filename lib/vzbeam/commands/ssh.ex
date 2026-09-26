@@ -1,5 +1,5 @@
 defmodule VzBeam.Commands.Ssh do
-  @moduledoc "ssh <name> [-- cmd…] — key-based ssh; interactive shell (Port :nouse_stdio) or one-shot command."
+  @moduledoc "ssh <name> [-- cmd…] — key-based ssh (Port :nouse_stdio); interactive shell or one-shot command."
   alias VzBeam.{Manifest, Keys, Leases, SshConn}
 
   @spec run([String.t()]) :: {:ok, iodata} | {:error, non_neg_integer, iodata}
@@ -12,8 +12,8 @@ defmodule VzBeam.Commands.Ssh do
       base = SshConn.args(ip)
 
       case rest do
-        ["--" | cmd] when cmd != [] -> oneshot(base ++ cmd, deps)
-        [] -> interactive(base, deps)
+        ["--" | cmd] when cmd != [] -> ssh(base ++ cmd, deps)
+        [] -> ssh(base, deps)
         _ -> {:error, 2, "usage: vzbeam ssh <name> [-- cmd...]\n"}
       end
     else
@@ -23,24 +23,18 @@ defmodule VzBeam.Commands.Ssh do
 
   def run(_, _), do: {:error, 2, "usage: vzbeam ssh <name> [-- cmd...]\n"}
 
-  defp oneshot(args, deps) do
-    case deps.run_cmd.(args) do
-      {out, 0} -> {:ok, out}
-      {out, status} -> {:error, status, out}
-    end
-  end
-
-  defp interactive(args, deps) do
-    case deps.interactive.(args) do
+  # ssh writes to vzbeam's own stdin/stdout/stderr, so a one-shot command's output streams
+  # byte-for-byte (binary-safe) and keeps stdout and stderr apart, even when it fails.
+  defp ssh(args, deps) do
+    case deps.ssh.(args) do
       0 -> {:ok, ""}
       status -> {:error, status, ""}
     end
   end
 
   @doc false
-  def interactive_port(args) do
-    ssh = System.find_executable("ssh")
-    port = Port.open({:spawn_executable, ssh}, [:nouse_stdio, :exit_status, args: args])
+  def ssh_port(args, exe \\ System.find_executable("ssh")) do
+    port = Port.open({:spawn_executable, exe}, [:nouse_stdio, :exit_status, args: args])
 
     receive do
       {^port, {:exit_status, s}} -> s
@@ -52,8 +46,6 @@ defmodule VzBeam.Commands.Ssh do
   defp error({:error, reason}), do: {:error, 1, ["ssh failed: ", inspect(reason), "\n"]}
 
   defp default_deps do
-    %{leases: &Leases.read/0,
-      run_cmd: fn args -> System.cmd("ssh", args, stderr_to_stdout: false) end,
-      interactive: &interactive_port/1}
+    %{leases: &Leases.read/0, ssh: &ssh_port/1}
   end
 end

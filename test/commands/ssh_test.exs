@@ -16,33 +16,47 @@ defmodule VzBeam.Commands.SshTest do
 
   defp leases, do: "{\n\tname=dev\n\tip_address=192.168.64.7\n\thw_address=1,#{@mac}\n}\n"
 
-  test "one-shot `-- cmd` builds key-based argv and propagates output + exit code" do
+  test "one-shot `-- cmd` hands key-based argv to ssh and relays nothing itself" do
     parent = self()
-    run_cmd = fn args -> send(parent, {:cmd, args}); {"hi\n", 0} end
-    deps = %{leases: fn -> leases() end, run_cmd: run_cmd, interactive: fn _ -> 0 end}
+    ssh = fn args -> send(parent, {:ssh, args}); 0 end
+    deps = %{leases: fn -> leases() end, ssh: ssh}
 
-    assert {:ok, "hi\n"} = Ssh.run(["dev", "--", "uname", "-a"], deps)
-    assert_received {:cmd, args}
+    # ssh writes to the terminal directly, so the command's output never passes
+    # through vzbeam (binary-safe, streamed, and stdout stays stdout).
+    assert {:ok, ""} = Ssh.run(["dev", "--", "uname", "-a"], deps)
+    assert_received {:ssh, args}
     joined = Enum.join(args, " ")
     assert joined =~ "BatchMode=yes" and joined =~ "admin@192.168.64.7"
     assert List.last(args) == "-a" and Enum.at(args, -2) == "uname"
   end
 
   test "one-shot propagates a non-zero remote exit code" do
-    deps = %{leases: fn -> leases() end, run_cmd: fn _ -> {"boom\n", 3} end, interactive: fn _ -> 0 end}
-    assert {:error, 3, "boom\n"} = Ssh.run(["dev", "--", "false"], deps)
+    deps = %{leases: fn -> leases() end, ssh: fn _ -> 3 end}
+    assert {:error, 3, ""} = Ssh.run(["dev", "--", "false"], deps)
   end
 
   test "interactive (no cmd) returns the ssh exit code via the injected port runner" do
-    deps = %{leases: fn -> leases() end, run_cmd: fn _ -> {"", 0} end, interactive: fn _args -> 0 end}
+    deps = %{leases: fn -> leases() end, ssh: fn _args -> 0 end}
     assert {:ok, ""} = Ssh.run(["dev"], deps)
 
-    deps2 = %{deps | interactive: fn _ -> 7 end}
+    deps2 = %{deps | ssh: fn _ -> 7 end}
     assert {:error, 7, ""} = Ssh.run(["dev"], deps2)
   end
 
+  # A child BEAM whose stdout we capture: bytes the spawned program writes must arrive
+  # untouched (the old capture-then-IO.write path raised ArgumentError on non-UTF-8).
+  test "the ssh port passes the program's stdout through byte-for-byte and returns its status" do
+    ebin = Path.join(:code.lib_dir(:vzbeam), "ebin")
+    script = ~S"""
+    status = VzBeam.Commands.Ssh.ssh_port(["-c", "printf '\\377\\000\\376'; exit 3"], "/bin/sh")
+    System.halt(status)
+    """
+
+    assert {<<255, 0, 254>>, 3} = System.cmd(System.find_executable("elixir"), ["-pa", ebin, "-e", script])
+  end
+
   test "errors when there is no lease" do
-    deps = %{leases: fn -> "" end, run_cmd: fn _ -> {"", 0} end, interactive: fn _ -> 0 end}
+    deps = %{leases: fn -> "" end, ssh: fn _ -> 0 end}
     assert {:error, 1, msg} = Ssh.run(["dev"], deps)
     assert IO.iodata_to_binary(msg) =~ "no DHCP lease"
   end
