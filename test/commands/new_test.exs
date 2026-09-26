@@ -248,8 +248,15 @@ defmodule VzBeam.Commands.NewTest do
     assert instructions =~ "deploy"
     assert instructions =~ "sshd"
     assert instructions =~ "halt -p"
-    assert instructions =~ "Closing the installer window only hides it"
-    assert instructions =~ "Ctrl-C here cancels the install"
+    # The installer's own (H)alt runs plain `halt`, which never powers the VM off.
+    assert instructions =~ "(S)hell"
+    assert instructions =~ "answer `s`"
+    assert instructions =~ "Closing the installer\nwindow only hides it"
+    assert instructions =~ "Press Ctrl-C here to cancel the install"
+    # Set apart from the ISO line before it and the installer progress after it.
+    text = IO.iodata_to_binary(instructions)
+    assert String.starts_with?(text, "\n") and String.ends_with?(text, "\n\n")
+    assert for(<<c <- text>>, c >= 128, do: c) == [], "installer instructions contain non-ASCII"
     assert_receive {:trace, :install}
   end
 

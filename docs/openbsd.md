@@ -48,10 +48,16 @@ Inside the installer:
 1. Install OpenBSD onto the VirtIO disk.
 2. Create the stored SSH user (`admin` in these examples).
 3. Leave `sshd` enabled.
-4. Complete installation, then finish with `halt -p`.
+4. At the final *Exit to (S)hell, (H)alt or (R)eboot?* prompt, answer `s`, then run
+   `halt -p`. The installer's own (H)alt runs plain `halt`, which stops the guest
+   without powering it off, so `vzbeam new` keeps waiting.
 
 The command treats guest power-off as installation completion. A reboot keeps the
 ISO attached and continues the same interactive session; it does not finish `new`.
+If you answered (H)alt (then pressed a key) or (R)eboot, the guest restarts into
+either the installed system or the installer, depending on which disk EFI boots.
+The install on the disk is complete either way: in the installed system, log in as
+root and run `halt -p`; in the installer, choose (S)hell and run `halt -p`.
 
 Closing the installer window only hides it; the installation keeps running. Switch
 back to `vz` (Dock or Cmd-Tab) to bring the window back. To cancel, press Ctrl-C in

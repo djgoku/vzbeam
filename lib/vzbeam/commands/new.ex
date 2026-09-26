@@ -347,12 +347,18 @@ defmodule VzBeam.Commands.New do
 
   defp announce_openbsd_instructions(deps, ssh_user) do
     deps.progress.([
-      "OpenBSD installer: create the user `",
+      "\n",
+      "In the OpenBSD installer:\n",
+      "  1. Install onto the VirtIO disk, create the user `",
       ssh_user,
-      "`, enable sshd, and finish with `halt -p`.\n",
-      "The bundle is promoted only after the installer VM powers off.\n",
-      "Closing the installer window only hides it: switch back to `vz` (Dock or Cmd-Tab) ",
-      "to reopen it. Ctrl-C here cancels the install.\n"
+      "`, and leave sshd enabled.\n",
+      "  2. At \"Exit to (S)hell, (H)alt or (R)eboot?\", answer `s`, then run `halt -p`.\n",
+      "     The installer's own (H)alt does not power off, so vzbeam would keep waiting.\n",
+      "\n",
+      "The bundle is created once the installer VM powers off. Closing the installer\n",
+      "window only hides it: switch back to `vz` (Dock or Cmd-Tab) to reopen it.\n",
+      "Press Ctrl-C here to cancel the install.\n",
+      "\n"
     ])
 
     :ok

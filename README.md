@@ -147,7 +147,7 @@ Use an official OpenBSD 7.9+ ARM64 ISO that you have verified against OpenBSD's 
 manifest. Installation is local-only and interactive:
 
 ```sh
-vzbeam new obsd --iso /path/install79.iso   # create admin, enable sshd, finish with halt -p
+vzbeam new obsd --iso /path/install79.iso   # create admin, enable sshd; at the end: (S)hell, halt -p
 vzbeam run obsd --gui                       # first normal boot; no ISO is attached
 vzbeam run obsd --iso                       # cached installer ISO for one recovery run
 vzbeam run obsd --iso /path/alternate.iso   # one-shot recovery media, not cached
