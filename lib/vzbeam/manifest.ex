@@ -30,9 +30,15 @@ defmodule VzBeam.Manifest do
 
   @spec write_to(Path.t(), map) :: :ok | {:error, term}
   def write_to(path, map) do
+    with {:ok, body} <- encode(map), do: AtomicFile.write(path, body)
+  end
+
+  @doc "The exact config.json body `write_to/2` writes for `map`."
+  @spec encode(map) :: {:ok, String.t()} | {:error, term}
+  def encode(map) do
     with {:ok, normalized} <- normalize(map) do
       stamped = Map.put(normalized, "schemaVersion", @schema_version)
-      AtomicFile.write(path, Jason.encode!(stamped, pretty: true))
+      {:ok, Jason.encode!(stamped, pretty: true)}
     end
   end
 

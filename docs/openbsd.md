@@ -61,6 +61,9 @@ for that name: a later creation may treat a dead pending owner as stale. First c
 that no creation process is active, resolve the reported lock or destination collision,
 move the preserved directory to the printed final path if needed, and remove only its
 `install-owner.json` marker. The other bundle files are the completed installation.
+If vzbeam could not write `config.json` itself, it prints the config after the paths;
+save it as `config.json` in the preserved directory before moving it, since that config
+holds the install's generated identity and exists nowhere else.
 
 ## First normal boot and SSH setup
 

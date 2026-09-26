@@ -317,6 +317,52 @@ defmodule VzBeam.Commands.NewTest do
     assert File.regular?(Path.join(pending, "config.json"))
   end
 
+  # The installer has powered off, so the disk holds the user's interactive install: a
+  # later failure keeps it and prints the config vzbeam could not write.
+  test "a config write failure after the installer powers off preserves the install", %{
+    home: home
+  } do
+    unwritable = %{
+      deps()
+      | install: fn opts, report ->
+          File.touch!(opts.nvram)
+          # A non-empty directory where config.json belongs makes the manifest write fail.
+          File.mkdir_p!(Path.join([Path.dirname(opts.disk), "config.json", "blocker"]))
+          report.({:event, "installed", %{}})
+          {:ok, %{machine_identifier: "OPENBSD-ID", mac_address: "5e:79:00:00:00:01"}}
+        end
+    }
+
+    pending = Path.join(home, "obsd.pending")
+
+    assert {:error, 1, message} = New.run(["obsd", "--iso", "x.iso"], unwritable)
+    text = IO.iodata_to_binary(message)
+    assert text =~ "preserved at #{pending}"
+    assert text =~ "Do not rerun"
+    assert text =~ Path.join(pending, "config.json")
+    assert text =~ Path.join([home, "obsd", "install-owner.json"])
+    assert text =~ ~s("macAddress": "5e:79:00:00:00:01")
+    assert text =~ ~s("machineIdentifier": "OPENBSD-ID")
+    assert File.regular?(Path.join(pending, "disk.img"))
+    assert File.regular?(Path.join(pending, "nvram.bin"))
+  end
+
+  test "a missing NVRAM after the installer powers off also preserves the disk", %{home: home} do
+    no_nvram = %{
+      deps()
+      | install: fn _opts, report ->
+          report.({:event, "installed", %{}})
+          {:ok, %{machine_identifier: "OPENBSD-ID", mac_address: "5e:79:00:00:00:01"}}
+        end
+    }
+
+    pending = Path.join(home, "obsd.pending")
+
+    assert {:error, 1, message} = New.run(["obsd", "--iso", "x.iso"], no_nvram)
+    assert IO.iodata_to_binary(message) =~ "preserved at #{pending}"
+    assert File.regular?(Path.join(pending, "disk.img"))
+  end
+
   test "protocol mismatch tells the user to rebuild the sidecar" do
     stale = %{deps() | reid: fn _guest -> {:error, {:incompatible, 1, 2}} end}
 

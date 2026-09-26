@@ -300,26 +300,22 @@ defmodule VzBeam.Commands.New do
                    resolution: resolution
                  },
                  install_reporter(deps)
-               ),
-             :ok <- require_file(nvram, :missing_nvram),
-             :ok <-
-               write_manifest(
-                 claim.path,
-                 openbsd_manifest(
-                   name,
-                   entry,
-                   result,
-                   ssh_user,
-                   cpu,
-                   mem_bytes
-                 )
                ) do
-          {:ok,
-           [
-             "created ",
-             name,
-             " (OpenBSD #{entry["version"] || "ISO"}; cpu=#{cpu} mem=#{div(mem_bytes, @gb)}G disk=#{div(disk_bytes, @gb)}G)\n"
-           ]}
+          manifest = openbsd_manifest(name, entry, result, ssh_user, cpu, mem_bytes)
+
+          # The installer has powered off: the disk now holds the user's interactive
+          # install, so a failure from here is tagged for preservation, not cleanup.
+          with :ok <- require_file(nvram, :missing_nvram),
+               :ok <- write_manifest(claim.path, manifest) do
+            {:ok,
+             [
+               "created ",
+               name,
+               " (OpenBSD #{entry["version"] || "ISO"}; cpu=#{cpu} mem=#{div(mem_bytes, @gb)}G disk=#{div(disk_bytes, @gb)}G)\n"
+             ]}
+          else
+            {:error, reason} -> {:error, {:installed, reason, manifest}}
+          end
         end
       end)
     else
@@ -437,6 +433,12 @@ defmodule VzBeam.Commands.New do
           :ok -> {:ok, output}
           {:error, reason} -> preserve_after_promote_error(claim, reason)
         end
+
+      {:error, {:installed, reason, manifest}} ->
+        error(
+          {:error,
+           {:install_unfinished, claim.path, Home.bundle_dir(claim.name), reason, manifest}}
+        )
 
       {:error, _} = work_error ->
         cleanup_after_error(claim, deps, work_error)
@@ -559,6 +561,33 @@ defmodule VzBeam.Commands.New do
          Path.join(final, "install-owner.json"),
          ".\n"
        ]}
+
+  # config.json holds the install's generated identity, which exists nowhere else once
+  # this process exits, so print it for the user to save by hand.
+  defp error({:error, {:install_unfinished, location, final, reason, manifest}}) do
+    config =
+      case Manifest.encode(manifest) do
+        {:ok, body} -> [body, "\n"]
+        {:error, _} -> []
+      end
+
+    {:error, 1,
+     [
+       "new: the OpenBSD installation finished, but its bundle could not be completed (",
+       inspect(reason),
+       "); the installed disk was preserved at ",
+       location,
+       ". Do not rerun `vzbeam new` for this name. After resolving the reported problem ",
+       "and confirming no creation process is active, save the config below as ",
+       Path.join(location, "config.json"),
+       ", move the preserved directory to ",
+       final,
+       ", then remove ",
+       Path.join(final, "install-owner.json"),
+       ".\n",
+       config
+     ]}
+  end
 
   defp error({:error, {:vz, _domain, 130, message}}),
     do: {:error, 1, ["new: ", message, "\n"]}
