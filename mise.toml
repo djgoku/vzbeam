@@ -5,6 +5,7 @@ packslip = "1" # signs the release manifest (packslip.sigstore.json)
 "conda:7zip" = "latest"
 elixir = "1.20.3-otp-29"
 erlang = "29"
+python = "latest"
 
 [tasks.deps]
 description = "Fetch Hex deps (also bootstraps Hex/rebar on a fresh runner)"
