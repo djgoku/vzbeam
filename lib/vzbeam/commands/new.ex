@@ -350,7 +350,9 @@ defmodule VzBeam.Commands.New do
       "OpenBSD installer: create the user `",
       ssh_user,
       "`, enable sshd, and finish with `halt -p`.\n",
-      "The bundle is promoted only after the installer VM powers off.\n"
+      "The bundle is promoted only after the installer VM powers off.\n",
+      "Closing the installer window only hides it: switch back to `vz` (Dock or Cmd-Tab) ",
+      "to reopen it. Ctrl-C here cancels the install.\n"
     ])
 
     :ok

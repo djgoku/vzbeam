@@ -83,14 +83,14 @@ public func runInstall(_ args: [String]) {
     session.start()
 }
 
-private final class InstallSession: NSObject, VZVirtualMachineDelegate, NSWindowDelegate {
+private final class InstallSession: NSObject, VZVirtualMachineDelegate {
     private let install: InstallOpts
     private let run: RunOpts
     private let machineId: String
     private let mac: String
     private var state: InstallState = .starting
     private var vm: VZVirtualMachine?
-    private var window: NSWindow?
+    private var window: VMWindow?
     private var signals: [DispatchSourceSignal] = []
     private var parentTimer: DispatchSourceTimer?
     private var cancellationDeadline: DispatchSourceTimer?
@@ -144,11 +144,6 @@ private final class InstallSession: NSObject, VZVirtualMachineDelegate, NSWindow
 
     func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) {
         finishFailure(error)
-    }
-
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        cancelInstallation()
-        return false
     }
 
     private func installCancellationSources() {
@@ -228,28 +223,14 @@ private final class InstallSession: NSObject, VZVirtualMachineDelegate, NSWindow
         parentTimer = nil
         cancellationDeadline?.cancel()
         cancellationDeadline = nil
-        window?.delegate = nil
         body()
     }
 
+    // Closing the window only hides it, as with `run --gui`; Ctrl-C in the terminal (SIGINT),
+    // SIGTERM/SIGHUP, or the parent exiting is what cancels the installation.
     private func runGUI(vm: VZVirtualMachine) {
-        let app = NSApplication.shared
-        app.setActivationPolicy(.regular)
-        let view = VZVirtualMachineView()
-        view.virtualMachine = vm
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0,
-                                width: max(run.width / 2, 640),
-                                height: max(run.height / 2, 400)),
-            styleMask: [.titled, .closable, .resizable],
-            backing: .buffered,
-            defer: false)
-        window.title = "vzbeam OpenBSD installer"
-        window.contentView = view
-        window.delegate = self
+        let window = VMWindow(vm: vm, title: "vzbeam OpenBSD installer", width: run.width, height: run.height)
         self.window = window
-        window.makeKeyAndOrderFront(nil)
-        app.activate(ignoringOtherApps: true)
-        app.run()
+        window.run()
     }
 }

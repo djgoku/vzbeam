@@ -248,6 +248,8 @@ defmodule VzBeam.Commands.NewTest do
     assert instructions =~ "deploy"
     assert instructions =~ "sshd"
     assert instructions =~ "halt -p"
+    assert instructions =~ "Closing the installer window only hides it"
+    assert instructions =~ "Ctrl-C here cancels the install"
     assert_receive {:trace, :install}
   end
 

@@ -52,6 +52,10 @@ Inside the installer:
 
 The command treats guest power-off as installation completion. A reboot keeps the
 ISO attached and continues the same interactive session; it does not finish `new`.
+
+Closing the installer window only hides it; the installation keeps running. Switch
+back to `vz` (Dock or Cmd-Tab) to bring the window back. To cancel, press Ctrl-C in
+the terminal running `vzbeam new`, which discards the new bundle.
 After power-off, the completed bundle contains `config.json`, `disk.img`, and
 `nvram.bin`.
 
