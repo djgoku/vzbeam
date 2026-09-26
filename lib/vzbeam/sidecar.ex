@@ -7,10 +7,14 @@ defmodule VzBeam.Sidecar do
   @terminals %{"image-info" => ["image"], "restore" => ["restored"],
                "reid" => ["reid"], "--version" => ["version"]}
 
-  @spec locate() :: {:ok, Path.t()} | {:error, :not_found}
-  def locate do
-    [System.get_env("VZBEAM_VZ"), Path.join([Home.root(), "bin", "vz"]),
-     priv_vz(:code.priv_dir(:vzbeam)), alongside_cli(), System.find_executable("vz")]
+  # A release's bundled sidecar comes before $VZBEAM_HOME/bin/vz: that path is shared
+  # by every vzbeam on the machine, so a stale `mix vz.build` there would otherwise
+  # shadow the bundle and fail its protocol check. Dev builds bundle nothing and fall
+  # through to it; VZBEAM_VZ overrides everything.
+  @spec locate({:error, term} | charlist | binary) :: {:ok, Path.t()} | {:error, :not_found}
+  def locate(priv_dir \\ :code.priv_dir(:vzbeam)) do
+    [System.get_env("VZBEAM_VZ"), priv_vz(priv_dir), Path.join([Home.root(), "bin", "vz"]),
+     alongside_cli(), System.find_executable("vz")]
     |> Enum.find(&usable?/1)
     |> case do
       nil -> {:error, :not_found}
@@ -27,9 +31,9 @@ defmodule VzBeam.Sidecar do
   def priv_vz({:error, _}), do: nil
   def priv_vz(dir), do: Path.join(to_string(dir), "vz")
 
-  # Troubleshooting aid: a stale $VZBEAM_HOME/bin/vz can shadow the bundle, and
-  # the --version check only catches wire-protocol drift — so make the resolved
-  # path observable.
+  # Troubleshooting aid: VZBEAM_VZ or a dev build's $VZBEAM_HOME/bin/vz decides which
+  # sidecar runs, and the --version check only catches wire-protocol drift — so make
+  # the resolved path observable.
   defp debug(path) do
     if System.get_env("VZBEAM_DEBUG") not in [nil, ""],
       do: IO.puts(:stderr, "vzbeam: using sidecar #{path}")

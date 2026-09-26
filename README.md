@@ -89,8 +89,9 @@ If it IS quarantined (browser/AirDrop download), clear it once — on macOS 26 a
 xattr -dr com.apple.quarantine ./vzbeam
 ```
 
-`VZBEAM_DEBUG=1 vzbeam <cmd>` prints which `vz` sidecar was selected. The bundled sidecar is
-overridable by `$VZBEAM_VZ` or a `mix vz.build` install in `$VZBEAM_HOME/bin/vz`.
+`VZBEAM_DEBUG=1 vzbeam <cmd>` prints which `vz` sidecar was selected. A release always uses the
+sidecar it bundles unless `$VZBEAM_VZ` points elsewhere; a `mix vz.build` install in
+`$VZBEAM_HOME/bin/vz` is only used by dev builds, which bundle none.
 
 ## Install a prebuilt `vzbeam` via mise
 
