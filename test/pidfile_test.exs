@@ -5,7 +5,12 @@ defmodule VzBeam.PidfileTest do
     home = Path.join(System.tmp_dir!(), "vzbeam-#{System.unique_integer([:positive])}")
     File.mkdir_p!(Path.join(home, "vm"))
     System.put_env("VZBEAM_HOME", home)
-    on_exit(fn -> System.delete_env("VZBEAM_HOME"); File.rm_rf!(home) end)
+
+    on_exit(fn ->
+      System.delete_env("VZBEAM_HOME")
+      File.rm_rf!(home)
+    end)
+
     :ok
   end
 

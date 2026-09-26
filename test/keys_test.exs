@@ -4,7 +4,12 @@ defmodule VzBeam.KeysTest do
   setup do
     home = Path.join(System.tmp_dir!(), "vzbeam-keys-#{System.unique_integer([:positive])}")
     System.put_env("VZBEAM_HOME", home)
-    on_exit(fn -> System.delete_env("VZBEAM_HOME"); File.rm_rf!(home) end)
+
+    on_exit(fn ->
+      System.delete_env("VZBEAM_HOME")
+      File.rm_rf!(home)
+    end)
+
     :ok
   end
 

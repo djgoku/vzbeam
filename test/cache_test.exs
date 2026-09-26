@@ -5,13 +5,20 @@ defmodule VzBeam.CacheTest do
   setup do
     home = Path.join(System.tmp_dir!(), "vzbeam-#{System.unique_integer([:positive])}")
     System.put_env("VZBEAM_HOME", home)
-    on_exit(fn -> System.delete_env("VZBEAM_HOME"); File.rm_rf!(home) end)
+
+    on_exit(fn ->
+      System.delete_env("VZBEAM_HOME")
+      File.rm_rf!(home)
+    end)
+
     {:ok, home: home}
   end
 
   defp deps(build \\ "25F80") do
     %{
-      image_info: fn _ -> {:ok, %{version: "26.5.1", build: build, url: "file:///x", source: "local"}} end,
+      image_info: fn _ ->
+        {:ok, %{version: "26.5.1", build: build, url: "file:///x", source: "local"}}
+      end,
       copy: fn _src, dst -> File.write(dst, "IPSWBYTES") end,
       download: fn _url, _dst -> {:error, :should_not_download} end
     }
@@ -20,7 +27,13 @@ defmodule VzBeam.CacheTest do
   defp url_deps(build \\ "25F80") do
     %{
       image_info: fn _path ->
-        {:ok, %{version: "26.5.1", build: build, url: "https://cdn.example/redirect.ipsw", source: "local"}}
+        {:ok,
+         %{
+           version: "26.5.1",
+           build: build,
+           url: "https://cdn.example/redirect.ipsw",
+           source: "local"
+         }}
       end,
       download: fn _url, dst -> File.write(dst, "IPSWBYTES") end,
       copy: fn _s, _d -> {:error, :should_not_copy} end
@@ -56,7 +69,8 @@ defmodule VzBeam.CacheTest do
   defp catalog_deps(build \\ "25F80") do
     Map.merge(url_deps(build), %{
       catalog: fn _spec ->
-        {:ok, %{"version" => "26.5.1", "build" => build, "url" => "https://updates.example/x.ipsw"}}
+        {:ok,
+         %{"version" => "26.5.1", "build" => build, "url" => "https://updates.example/x.ipsw"}}
       end
     })
   end
@@ -122,7 +136,9 @@ defmodule VzBeam.CacheTest do
     end
 
     deps = %{
-      image_info: fn _ -> {:ok, %{version: "26.5.1", build: "25F80", url: "file:///x", source: "local"}} end,
+      image_info: fn _ ->
+        {:ok, %{version: "26.5.1", build: "25F80", url: "file:///x", source: "local"}}
+      end,
       download: fn _u, _d -> {:error, :should_not_download} end,
       copy: real_copy
     }
@@ -141,11 +157,13 @@ defmodule VzBeam.CacheTest do
   end
 
   test "ensure rejects a non-https URL scheme" do
-    assert {:error, :unsupported_url_scheme} = Cache.ensure("http://host.example/x.ipsw", url_deps())
+    assert {:error, :unsupported_url_scheme} =
+             Cache.ensure("http://host.example/x.ipsw", url_deps())
   end
 
   test "ensure rejects a non-http unsupported scheme" do
-    assert {:error, :unsupported_url_scheme} = Cache.ensure("ftp://host.example/x.ipsw", url_deps())
+    assert {:error, :unsupported_url_scheme} =
+             Cache.ensure("ftp://host.example/x.ipsw", url_deps())
   end
 
   test "ensure rejects an https URL with no host" do

@@ -1,6 +1,6 @@
 defmodule VzBeam.Commands.Ssh do
   @moduledoc "ssh <name> [-- cmd…] — key-based ssh (Port :nouse_stdio); interactive shell or one-shot command."
-  alias VzBeam.{Manifest, Keys, Leases, SshConn}
+  alias VzBeam.{Manifest, Keys, Leases, SshConn, GuestPolicy}
 
   @spec run([String.t()]) :: {:ok, iodata} | {:error, non_neg_integer, iodata}
   def run(args), do: run(args, default_deps())
@@ -9,7 +9,7 @@ defmodule VzBeam.Commands.Ssh do
     with {:ok, m} <- Manifest.read_or(name, :no_such_bundle),
          {:ok, _} <- Keys.ensure(),
          {:ok, ip} <- SshConn.resolve_ip(m, deps.leases.()) do
-      base = SshConn.args(ip)
+      base = SshConn.args(ip, GuestPolicy.ssh_user(m))
 
       case rest do
         ["--" | cmd] when cmd != [] -> ssh(base ++ cmd, deps)
@@ -42,8 +42,16 @@ defmodule VzBeam.Commands.Ssh do
   end
 
   defp error({:error, :no_such_bundle}), do: {:error, 1, "ssh: no such bundle\n"}
-  defp error({:error, :no_lease}), do: {:error, 1, "ssh: no DHCP lease yet (is it networked? bridge100)\n"}
+
+  defp error({:error, :no_lease}),
+    do: {:error, 1, "ssh: no DHCP lease yet (is it networked? bridge100)\n"}
+
+  defp error({:error, :invalid_manifest}), do: manifest_error(:invalid_manifest)
+  defp error({:error, {:unsupported_schema, _} = reason}), do: manifest_error(reason)
+  defp error({:error, {:unsupported_guest, _} = reason}), do: manifest_error(reason)
   defp error({:error, reason}), do: {:error, 1, ["ssh failed: ", inspect(reason), "\n"]}
+
+  defp manifest_error(reason), do: {:error, 1, ["ssh: ", Manifest.describe_error(reason), "\n"]}
 
   defp default_deps do
     %{leases: &Leases.read/0, ssh: &ssh_port/1}

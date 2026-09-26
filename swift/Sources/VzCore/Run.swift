@@ -8,18 +8,49 @@ private var liveRun: RunSession?
 
 public func runRun(_ args: [String]) {
     if setsid() == -1 { Wire.log("vz: setsid failed: \(String(cString: strerror(errno)))") }  // in-process, no fork: getpid() stays == the launch pid the engine captured
+    let opts: RunOpts
+    do { opts = try parseRunOpts(args) }
+    catch {
+        let fields = Wire.errorFields(error)
+        Wire.emitError(domain: fields.domain, code: fields.code, "run: \(fields.message)")
+        exit(2)
+    }
+    liveRun = RunSession(opts: opts)
+    liveRun?.start()
+}
+
+public func parseRunOpts(_ args: [String]) throws -> RunOpts {
     let a = Args(args, booleanFlags: ["gui", "headless"], pairFlags: ["share"])
-    guard let mid = a.value("machine-id"), let hw = a.value("hardware-model"), let mac = a.value("mac"),
-          let disk = a.value("disk"), let aux = a.value("aux"),
+    let guest = try GuestOS.parse(a.value("guest"))
+    guard let mid = a.value("machine-id"), let mac = a.value("mac"),
+          let disk = a.value("disk"),
           let cpu = a.value("cpu").flatMap(Int.init), let mem = a.value("mem").flatMap(UInt64.init) else {
-        Wire.emitError(domain: "vz", code: 2, "run: missing required flags"); exit(2)
+        throw ConfigError.badField("required flags")
     }
     let (w, h) = parseResolution(a.value("resolution") ?? "1920x1200")
     let share = a.pair("share").map { (tag: $0.0, path: $0.1) }
-    let opts = RunOpts(machineId: mid, hardwareModel: hw, mac: mac, disk: disk, aux: aux,
-                       cpu: cpu, mem: mem, gui: a.has("gui"), width: w, height: h, share: share)
-    liveRun = RunSession(opts: opts)
-    liveRun?.start()
+    let hardwareModel = a.value("hardware-model")
+    let aux = a.value("aux")
+    let nvram = a.value("nvram")
+    let iso = a.value("iso")
+
+    switch guest {
+    case .macos:
+        guard hardwareModel != nil, aux != nil, nvram == nil, iso == nil else {
+            throw ConfigError.badField("macos options")
+        }
+    case .openbsd:
+        guard nvram != nil, hardwareModel == nil, aux == nil, share == nil else {
+            throw ConfigError.badField("openbsd options")
+        }
+    }
+
+    return RunOpts(guest: guest, machineId: mid, hardwareModel: hardwareModel,
+                   mac: mac, disk: disk, aux: aux, nvram: nvram, iso: iso,
+                   cpu: cpu, mem: mem, gui: a.has("gui"), width: w, height: h,
+                   share: share, createNVRAM: false,
+                   recovery: guest == .openbsd && iso != nil,
+                   name: a.value("name").flatMap { $0.isEmpty ? nil : $0 })
 }
 
 private func parseResolution(_ s: String) -> (Int, Int) {
@@ -28,18 +59,27 @@ private func parseResolution(_ s: String) -> (Int, Int) {
     return (1920, 1200)
 }
 
-final class RunSession: NSObject, VZVirtualMachineDelegate, NSApplicationDelegate {
+final class RunSession: NSObject, VZVirtualMachineDelegate {
+    // Keep the installed disk absent while EFI commits to the only bootable device.
+    // Attaching earlier reproduced nondeterministic disk-first boots on hardware.
+    private static let recoveryDiskAttachDelay: TimeInterval = 5
+
     private let opts: RunOpts
     private var vm: VZVirtualMachine?
+    private var preparation: RunPreparation?
     private var finished = false           // only touched on .main → no lock needed
     private var sig: DispatchSourceSignal?
-    private var window: NSWindow?          // --gui only; kept across close so a Dock click can reopen it
+    private var window: VMWindow?          // --gui only
 
     init(opts: RunOpts) { self.opts = opts }
 
     func start() {
         let cfg: VZVirtualMachineConfiguration
-        do { cfg = try buildConfiguration(opts) }
+        do {
+            let preparation = try prepareRunOptions(opts)
+            self.preparation = preparation
+            cfg = try buildConfiguration(preparation.options)
+        }
         catch { return finishError(error) }
 
         let vm = VZVirtualMachine(configuration: cfg)   // main queue
@@ -47,7 +87,7 @@ final class RunSession: NSObject, VZVirtualMachineDelegate, NSApplicationDelegat
         installSignalTrap()
         vm.start { [weak self] result in
             switch result {
-            case .success: Wire.emit(["type": "started", "pid": Int(getpid())])
+            case .success: self?.completeStart(vm: vm)
             case .failure(let e): self?.finishError(e)
             }
         }
@@ -67,6 +107,39 @@ final class RunSession: NSObject, VZVirtualMachineDelegate, NSApplicationDelegat
         s.resume(); sig = s
     }
 
+    private func completeStart(vm: VZVirtualMachine) {
+        guard opts.recovery else { return emitStarted() }
+        guard #available(macOS 15.0, *), let controller = vm.usbControllers.first else {
+            return finishError(ConfigError.unsupported("OpenBSD recovery requires macOS 15 or newer"))
+        }
+
+        let device: VZUSBMassStorageDevice
+        do {
+            let attachment = try VZDiskImageStorageDeviceAttachment(
+                url: URL(fileURLWithPath: opts.disk), readOnly: false)
+            let configuration = VZUSBMassStorageDeviceConfiguration(attachment: attachment)
+            device = VZUSBMassStorageDevice(configuration: configuration)
+        } catch {
+            return finishError(error)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.recoveryDiskAttachDelay) { [weak self] in
+            guard let self, !self.finished else { return }
+            controller.attach(device: device) { [weak self] error in
+                if let error {
+                    self?.finishError(error)
+                } else {
+                    self?.emitStarted()
+                }
+            }
+        }
+    }
+
+    private func emitStarted() {
+        guard !finished else { return }
+        Wire.emit(["type": "started", "pid": Int(getpid())])
+    }
+
     // VZVirtualMachineDelegate (fires on the main queue)
     func guestDidStop(_ virtualMachine: VZVirtualMachine) { finishStopped() }
     func virtualMachine(_ vm: VZVirtualMachine, didStopWithError error: Error) {
@@ -82,38 +155,19 @@ final class RunSession: NSObject, VZVirtualMachineDelegate, NSApplicationDelegat
         finishOnce { Wire.emitError(domain: domain, code: code, message); exit(1) }
     }
     private func finishOnce(_ body: () -> Void) {
-        if finished { return }; finished = true; body()
+        if finished { return }
+        finished = true
+        if let preparation {
+            cleanupRunPreparation(preparation)
+            self.preparation = nil
+        }
+        body()
     }
 
     private func runGUI(vm: VZVirtualMachine) {
-        let app = NSApplication.shared
-        app.setActivationPolicy(.regular)   // .regular gives a Dock icon so the first-boot window is findable
-        app.delegate = self                 // weak; liveRun keeps self alive
-        let view = VZVirtualMachineView(); view.virtualMachine = vm
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: max(opts.width / 2, 640), height: max(opts.height / 2, 400)),
-                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        win.title = "vzbeam"; win.contentView = view
-        win.collectionBehavior.insert(.fullScreenPrimary)   // green button: full screen (Option-click: fill)
-        win.isReleasedWhenClosed = false    // close only hides it; the VM keeps running behind it
+        let win = VMWindow(vm: vm, title: vmWindowTitle("vzbeam", name: opts.name), width: opts.width, height: opts.height)
         window = win
-        win.makeKeyAndOrderFront(nil); app.activate(ignoringOtherApps: true)
-        app.run()
-    }
-
-    // NSApplicationDelegate: closing the window leaves the guest running, so returning to the app
-    // brings the same window (still attached to the VM) back. Switching to it (Cmd-Tab, Dock,
-    // Mission Control) fires didBecomeActive, which, as in other apps, leaves a minimized window
-    // in the Dock. A Dock-icon click fires reopen (alone, if the app is already frontmost, as it
-    // is right after the close) and restores the window whether closed or minimized.
-    func applicationDidBecomeActive(_ notification: Notification) {
-        guard let window, !window.isVisible, !window.isMiniaturized else { return }
-        window.makeKeyAndOrderFront(nil)
-    }
-
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        guard let window, !window.isVisible else { return false }
-        if window.isMiniaturized { window.deminiaturize(nil) } else { window.makeKeyAndOrderFront(nil) }
-        return false
+        win.run()
     }
 }
 

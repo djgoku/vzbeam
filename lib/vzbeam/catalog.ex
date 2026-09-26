@@ -85,7 +85,8 @@ defmodule VzBeam.Catalog do
   # (the catalog is ~100KB, no progress bar needed) but still prints errors.
   defp http_get(url) do
     case System.cmd("curl", ["-fsSL", "--proto", "=https", "--proto-redir", "=https", url],
-           stderr_to_stdout: true) do
+           stderr_to_stdout: true
+         ) do
       {body, 0} -> {:ok, body}
       {out, code} -> {:error, {:catalog_fetch_failed, "curl exited #{code}: #{String.trim(out)}"}}
     end

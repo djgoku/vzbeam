@@ -4,7 +4,7 @@ defmodule VzBeam.MixProject do
   def project do
     [
       app: :vzbeam,
-      version: "0.3.3",
+      version: "0.4.0",
       elixir: "~> 1.17",
       escript: [main_module: VzBeam.CLI, app: nil],
       releases: releases(),
@@ -12,7 +12,7 @@ defmodule VzBeam.MixProject do
     ]
   end
 
-  def application, do: [mod: {VzBeam.Application, []}, extra_applications: [:logger]]
+  def application, do: [mod: {VzBeam.Application, []}, extra_applications: [:logger, :crypto]]
 
   defp releases do
     [

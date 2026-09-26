@@ -7,7 +7,8 @@ defmodule VzBeam.Lock do
   @spec path() :: Path.t()
   def path, do: Path.join(Home.root(), "run.lock")
 
-  @spec with_lock((-> r), pos_integer) :: {:ok, r} | {:error, :lock_timeout | :lock_corrupt} when r: term
+  @spec with_lock((-> r), pos_integer) :: {:ok, r} | {:error, :lock_timeout | :lock_corrupt}
+        when r: term
   def with_lock(fun, timeout_ms \\ 10_000) do
     case acquire(timeout_ms) do
       :ok ->
@@ -58,10 +59,18 @@ defmodule VzBeam.Lock do
     File.rm(tmp)
 
     case outcome do
-      :acquired -> :ok
-      :dead -> File.rm(lk); loop(record, deadline)
-      :absent -> loop(record, deadline)
-      status -> wait(record, deadline, reason(status))
+      :acquired ->
+        :ok
+
+      :dead ->
+        File.rm(lk)
+        loop(record, deadline)
+
+      :absent ->
+        loop(record, deadline)
+
+      status ->
+        wait(record, deadline, reason(status))
     end
   end
 

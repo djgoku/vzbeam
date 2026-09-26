@@ -6,18 +6,37 @@ defmodule VzBeam.Commands.Fetch do
 
   def run([spec], %{ensure: ensure}) do
     case ensure.(spec) do
-      {:ok, status, e} -> {:ok, [verb(status), " ", e["version"], " (", e["build"], ")\n"]}
-      {:error, {:unknown_build, build}} ->
-        {:error, 1, ["fetch: ", build, " is not cached and Apple no longer offers it ",
-                     "(see vzbeam images)\n"]}
+      {:ok, status, e} ->
+        {:ok, [verb(status), " ", e["version"], " (", e["build"], ")\n"]}
 
-      {:error, reason} -> {:error, 1, ["fetch failed: ", inspect(reason), "\n"]}
+      {:error, {:unknown_build, build}} ->
+        {:error, 1,
+         [
+           "fetch: ",
+           build,
+           " is not cached and Apple no longer offers it ",
+           "(see vzbeam images)\n"
+         ]}
+
+      {:error, {:incompatible, have, want}} ->
+        {:error, 1,
+         [
+           "fetch: sidecar protocol ",
+           to_string(have),
+           " is incompatible with required protocol ",
+           to_string(want),
+           "; rebuild it (`mix vz.build`)\n"
+         ]}
+
+      {:error, reason} ->
+        {:error, 1, ["fetch failed: ", inspect(reason), "\n"]}
     end
   end
 
   def run(_, _), do: {:error, 2, "usage: vzbeam fetch <latest|PATH|URL|BUILD>\n"}
 
   defp verb(:cached), do: "already cached"
+
   # :reconciled means the file was already on disk (just not indexed) — cached, not freshly fetched.
   defp verb(:reconciled), do: "already cached"
   defp verb(_), do: "fetched"

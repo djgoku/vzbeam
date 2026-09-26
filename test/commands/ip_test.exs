@@ -5,9 +5,23 @@ defmodule VzBeam.Commands.IpTest do
     home = Path.join(System.tmp_dir!(), "vzbeam-#{System.unique_integer([:positive])}")
     File.mkdir_p!(Path.join(home, "base"))
     System.put_env("VZBEAM_HOME", home)
-    File.write!(Path.join([home, "base", "config.json"]),
-      Jason.encode!(%{"name" => "base", "macAddress" => "5e:aa:bb:cc:dd:ee"}))
-    on_exit(fn -> System.delete_env("VZBEAM_HOME"); File.rm_rf!(home) end)
+
+    File.write!(
+      Path.join([home, "base", "config.json"]),
+      Jason.encode!(%{
+        "schemaVersion" => 2,
+        "guestOS" => "openbsd",
+        "name" => "base",
+        "macAddress" => "5e:aa:bb:cc:dd:ee",
+        "sshUser" => "deploy"
+      })
+    )
+
+    on_exit(fn ->
+      System.delete_env("VZBEAM_HOME")
+      File.rm_rf!(home)
+    end)
+
     :ok
   end
 
@@ -33,9 +47,29 @@ defmodule VzBeam.Commands.IpTest do
 
   test "errors gracefully when macAddress is null" do
     home = System.get_env("VZBEAM_HOME")
-    File.write!(Path.join([home, "base", "config.json"]),
-      Jason.encode!(%{"name" => "base", "macAddress" => nil}))
+
+    File.write!(
+      Path.join([home, "base", "config.json"]),
+      Jason.encode!(%{"name" => "base", "macAddress" => nil})
+    )
+
     assert {:error, 1, msg} = VzBeam.Commands.Ip.run(["base"], fn -> "" end)
     assert IO.iodata_to_binary(msg) =~ "no macAddress"
+  end
+
+  test "describes malformed and unsupported manifests with the ip prefix" do
+    home = System.get_env("VZBEAM_HOME")
+
+    for {body, expected} <- [
+          {Jason.encode!(%{"schemaVersion" => 99, "guestOS" => "macos"}),
+           "unsupported schema version 99"},
+          {Jason.encode!(%{"schemaVersion" => 2, "guestOS" => "plan9"}),
+           "unsupported guest OS plan9"},
+          {"not-json", "invalid config.json"}
+        ] do
+      File.write!(Path.join([home, "base", "config.json"]), body)
+      assert {:error, 1, message} = VzBeam.Commands.Ip.run(["base"], fn -> @leases end)
+      assert IO.iodata_to_binary(message) =~ "ip: #{expected}"
+    end
   end
 end

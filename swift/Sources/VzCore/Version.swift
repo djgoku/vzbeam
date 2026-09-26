@@ -1,1 +1,1 @@
-public func runVersion() { Wire.emit(["type": "version", "protocol": 1]) }
+public func runVersion() { Wire.emit(["type": "version", "protocol": 2]) }

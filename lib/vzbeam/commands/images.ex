@@ -27,8 +27,12 @@ defmodule VzBeam.Commands.Images do
         Enum.reject(entries, &MapSet.member?(cached, &1["build"]))
 
       {:error, reason} ->
-        deps.warn.(["note: could not reach Apple's catalog (", inspect(reason),
-                    "); showing cached images only\n"])
+        deps.warn.([
+          "note: could not reach Apple's catalog (",
+          inspect(reason),
+          "); showing cached images only\n"
+        ])
+
         []
     end
   end
@@ -40,7 +44,10 @@ defmodule VzBeam.Commands.Images do
   defp size(_), do: "-"
 
   defp default_deps do
-    %{list: &VzBeam.Cache.list/0, remote: &VzBeam.Catalog.list/0,
-      warn: fn io -> IO.write(:stderr, io) end}
+    %{
+      list: &VzBeam.Cache.list/0,
+      remote: &VzBeam.Catalog.list/0,
+      warn: fn io -> IO.write(:stderr, io) end
+    }
   end
 end
