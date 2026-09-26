@@ -41,6 +41,37 @@ defmodule VzBeam.SidecarTest do
     assert {:error, :not_found} = Sidecar.locate()
   end
 
+  # $VZBEAM_HOME/bin/vz is shared by every vzbeam on the machine, so a release must
+  # prefer the sidecar it bundles: a stale `mix vz.build` there must not shadow it.
+  describe "locate order" do
+    setup do
+      System.delete_env("VZBEAM_VZ")
+      priv = Path.join(System.tmp_dir!(), "vzbeam-priv-#{System.unique_integer([:positive])}")
+      home_vz = Path.join([System.get_env("VZBEAM_HOME"), "bin", "vz"])
+
+      for path <- [Path.join(priv, "vz"), home_vz] do
+        File.mkdir_p!(Path.dirname(path))
+        File.write!(path, "")
+      end
+
+      on_exit(fn -> File.rm_rf(priv) end)
+      %{priv: priv, bundled: Path.join(priv, "vz"), home_vz: home_vz}
+    end
+
+    test "prefers the bundled sidecar over $VZBEAM_HOME/bin/vz", c do
+      assert {:ok, c.bundled} == Sidecar.locate(c.priv)
+    end
+
+    test "falls back to $VZBEAM_HOME/bin/vz when nothing is bundled (dev)", c do
+      assert {:ok, c.home_vz} == Sidecar.locate({:error, :bad_name})
+    end
+
+    test "VZBEAM_VZ still overrides the bundled sidecar", c do
+      System.put_env("VZBEAM_VZ", @fake)
+      assert {:ok, @fake} == Sidecar.locate(c.priv)
+    end
+  end
+
   test "check_version accepts protocol 1 (real subprocess, default runner)" do
     {:ok, path} = Sidecar.locate()
     assert :ok = Sidecar.check_version(path)
