@@ -44,6 +44,7 @@ defmodule VzBeam.Commands.SshTest do
 
   test "one-shot `-- cmd` hands key-based argv to ssh and relays nothing itself" do
     parent = self()
+
     ssh = fn args ->
       send(parent, {:ssh, args})
       0
@@ -93,12 +94,14 @@ defmodule VzBeam.Commands.SshTest do
   # untouched (the old capture-then-IO.write path raised ArgumentError on non-UTF-8).
   test "the ssh port passes the program's stdout through byte-for-byte and returns its status" do
     ebin = Path.join(:code.lib_dir(:vzbeam), "ebin")
+
     script = ~S"""
     status = VzBeam.Commands.Ssh.ssh_port(["-c", "printf '\\377\\000\\376'; exit 3"], "/bin/sh")
     System.halt(status)
     """
 
-    assert {<<255, 0, 254>>, 3} = System.cmd(System.find_executable("elixir"), ["-pa", ebin, "-e", script])
+    assert {<<255, 0, 254>>, 3} =
+             System.cmd(System.find_executable("elixir"), ["-pa", ebin, "-e", script])
   end
 
   test "errors when there is no lease" do
