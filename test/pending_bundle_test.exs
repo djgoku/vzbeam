@@ -43,6 +43,28 @@ defmodule VzBeam.PendingBundleTest do
     assert Jason.decode!(File.read!(owner_path("obsd"))) == claim.owner
   end
 
+  # An ownerless .pending reads as :pending_owner_unreadable to every later claim, so a
+  # claim whose owner write fails must not leave the directory it just created behind.
+  test "a failed owner write removes the new claim directory", %{self_pid: pid} do
+    starts = %{pid => {:ok, "self-start"}}
+    failing = Map.put(deps(starts), :write_owner, fn _path, _body -> {:error, :enospc} end)
+
+    assert {:error, :enospc} = PendingBundle.claim("obsd", failing)
+    refute File.exists?(Home.bundle_dir("obsd") <> ".pending")
+    assert {:ok, _claim} = PendingBundle.claim("obsd", deps(starts))
+  end
+
+  test "a failed owner write while reclaiming a stale claim removes its directory", %{
+    self_pid: pid
+  } do
+    path = seed_pending("obsd", %{"pid" => 999_999, "startedAt" => "gone"})
+    starts = %{pid => {:ok, "self-start"}}
+    failing = Map.put(deps(starts), :write_owner, fn _path, _body -> {:error, :enospc} end)
+
+    assert {:error, :enospc} = PendingBundle.claim("obsd", failing)
+    refute File.exists?(path)
+  end
+
   test "claim rechecks final existence while locked and never overwrites it", %{
     home: home,
     self_pid: pid

@@ -13,8 +13,9 @@ defmodule VzBeam.PendingBundle do
     case deps.process_start.(pid) do
       {:ok, started} ->
         owner = %{"pid" => pid, "startedAt" => started}
+        write_owner = Map.get(deps, :write_owner, &AtomicFile.write/2)
 
-        deps.with_lock.(fn -> claim_locked(name, owner, deps.process_start) end)
+        deps.with_lock.(fn -> claim_locked(name, owner, deps.process_start, write_owner) end)
         |> normalize_claim()
 
       :error ->
@@ -36,7 +37,7 @@ defmodule VzBeam.PendingBundle do
     |> normalize_action()
   end
 
-  defp claim_locked(name, owner, process_start) do
+  defp claim_locked(name, owner, process_start, write_owner) do
     path = Home.bundle_dir(name) <> ".pending"
 
     cond do
@@ -44,7 +45,7 @@ defmodule VzBeam.PendingBundle do
         {:error, :exists}
 
       not File.exists?(path) ->
-        create_claim(name, path, owner)
+        create_claim(name, path, owner, write_owner)
 
       true ->
         case read_owner(path) do
@@ -52,7 +53,7 @@ defmodule VzBeam.PendingBundle do
             if process_start.(pid) == {:ok, started} do
               {:error, :creation_in_progress}
             else
-              reclaim(name, path, owner)
+              reclaim(name, path, owner, write_owner)
             end
 
           _ ->
@@ -61,17 +62,26 @@ defmodule VzBeam.PendingBundle do
     end
   end
 
-  defp reclaim(name, path, owner) do
+  defp reclaim(name, path, owner, write_owner) do
     case File.rm_rf(path) do
-      {:ok, _} -> create_claim(name, path, owner)
+      {:ok, _} -> create_claim(name, path, owner, write_owner)
       {:error, reason, file} -> {:error, {:pending_cleanup, file, reason}}
     end
   end
 
-  defp create_claim(name, path, owner) do
-    with :ok <- File.mkdir_p(path),
-         :ok <- AtomicFile.write(owner_path(path), Jason.encode!(owner)) do
-      {:ok, %__MODULE__{name: name, path: path, owner: owner}}
+  # Runs under the host lock on a path that was absent or just removed, so the directory
+  # is ours to remove if the owner write fails: an ownerless .pending would otherwise read
+  # as :pending_owner_unreadable to every later claim for this name.
+  defp create_claim(name, path, owner, write_owner) do
+    with :ok <- File.mkdir_p(path) do
+      case write_owner.(owner_path(path), Jason.encode!(owner)) do
+        :ok ->
+          {:ok, %__MODULE__{name: name, path: path, owner: owner}}
+
+        {:error, _} = error ->
+          File.rm_rf(path)
+          error
+      end
     end
   end
 
@@ -135,6 +145,10 @@ defmodule VzBeam.PendingBundle do
   defp normalize_action({:error, reason}), do: {:error, reason}
 
   defp default_deps do
-    %{with_lock: &Lock.with_lock/1, process_start: &Pidfile.process_start/1}
+    %{
+      with_lock: &Lock.with_lock/1,
+      process_start: &Pidfile.process_start/1,
+      write_owner: &AtomicFile.write/2
+    }
   end
 end
