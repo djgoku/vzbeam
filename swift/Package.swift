@@ -11,5 +11,6 @@ let package = Package(
         ]),
         .executableTarget(name: "vz", dependencies: ["VzCore"]),
         .executableTarget(name: "vzcheck", dependencies: ["VzCore"]),
+        .testTarget(name: "VzCoreTests", dependencies: ["VzCore"]),
     ]
 )
