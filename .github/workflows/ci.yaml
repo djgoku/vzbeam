@@ -27,12 +27,35 @@ jobs:
           test "${arch}" = "arm64"
       - run: mise run ci
 
+  swift:
+    name: Swift (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, xcode-27]
+    concurrency:
+      group: swift-${{ matrix.runner }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+      - name: Log host and toolchain
+        run: |
+          sw_vers
+          arch="$(uname -m)"
+          echo "runner arch: ${arch}"
+          test "${arch}" = "arm64"
+          xcode-select -p
+          xcrun swift --version
+      - run: xcrun swift test -c release --package-path swift
+
   # Publishes on a version bump pushed to main. A workflow_dispatch run from a branch publishes a
   # release candidate: `mise run release` refuses a stable version off main, so the branch sets a
   # pre-release version (0.3.2-rc.1) that becomes a GitHub prerelease and never takes Latest.
   # Keep signing in this workflow file: mise's signer continuity pins the workflow path.
   release:
-    needs: [test]
+    needs: [test, swift]
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: macos-26
     timeout-minutes: 30
@@ -74,7 +97,7 @@ jobs:
   # This is what catches release breakage before merge, since the `release` job above only
   # publishes on push to main or a manual dispatch.
   release-dry-run:
-    needs: [test]
+    needs: [test, swift]
     if: github.event_name == 'pull_request'
     runs-on: macos-26
     timeout-minutes: 30
