@@ -61,6 +61,7 @@ defmodule VzBeam.CatalogTest do
 
   defp deps(plist \\ @plist), do: %{get: fn _url -> {:ok, plist} end}
 
+  @tag :macos
   test "list extracts the VirtualMac2,1 entries via plutil" do
     assert {:ok, [entry]} = Catalog.list(deps())
 
@@ -71,10 +72,12 @@ defmodule VzBeam.CatalogTest do
            }
   end
 
+  @tag :macos
   test "resolve matches a build id case-insensitively" do
     assert {:ok, %{"build" => "25G76"}} = Catalog.resolve("25g76", deps())
   end
 
+  @tag :macos
   test "resolve reports a build the catalog does not offer" do
     assert {:error, {:unknown_build, "20G80"}} = Catalog.resolve("20G80", deps())
   end
@@ -83,6 +86,7 @@ defmodule VzBeam.CatalogTest do
     assert {:error, :net_down} = Catalog.list(%{get: fn _ -> {:error, :net_down} end})
   end
 
+  @tag :macos
   test "a non-plist body errors instead of raising" do
     assert {:error, {:plutil_failed, _}} = Catalog.list(deps("not a plist"))
   end
