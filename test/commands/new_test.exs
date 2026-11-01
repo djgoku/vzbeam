@@ -102,6 +102,7 @@ defmodule VzBeam.Commands.NewTest do
     File.write!(Path.join(dir, "nvram.bin"), "OPENBSD-NVRAM")
   end
 
+  @tag :macos
   test "clone copies the bundle and re-identifies it", %{home: home} do
     File.write!(Path.join([home, "base", "install-owner.json"]), "stray")
     parent = self()
@@ -133,6 +134,7 @@ defmodule VzBeam.Commands.NewTest do
     assert IO.iodata_to_binary(msg) =~ "running"
   end
 
+  @tag :macos
   test "clone preserves OpenBSD state and re-identifies with a generic identity", %{home: home} do
     make_openbsd_base(home)
     parent = self()
@@ -158,6 +160,7 @@ defmodule VzBeam.Commands.NewTest do
     assert File.read!(Path.join([home, "obsd-copy", "nvram.bin"])) == "OPENBSD-NVRAM"
   end
 
+  @tag :macos
   test "OpenBSD clone disk growth explains unallocated guest space", %{home: home} do
     make_openbsd_base(home)
     assert {:ok, message} = New.run(["obsd-copy", "obsd-base", "--disk-gb", "1"], deps())
@@ -373,6 +376,7 @@ defmodule VzBeam.Commands.NewTest do
     assert File.regular?(Path.join(pending, "disk.img"))
   end
 
+  @tag :macos
   test "protocol mismatch tells the user to rebuild the sidecar" do
     stale = %{deps() | reid: fn _guest -> {:error, {:incompatible, 1, 2}} end}
 
@@ -493,6 +497,7 @@ defmodule VzBeam.Commands.NewTest do
     assert_received {:progress, "fetched 26.5.1 (25F80)\n"}
   end
 
+  @tag :macos
   test "clone reclaims a dead owner's stale .pending and does not nest", %{home: home} do
     File.mkdir_p!(Path.join(home, "dev.pending"))
     File.write!(Path.join([home, "dev.pending", "junk"]), "stale")
@@ -516,6 +521,7 @@ defmodule VzBeam.Commands.NewTest do
     {:ok, :ok} = File.open(path, [:write, :raw], fn fd -> :file.pwrite(fd, size - 1, <<0>>) end)
   end
 
+  @tag :macos
   test "clone honors --disk-gb by growing the cloned disk", %{home: home} do
     assert {:ok, msg} = New.run(["dev", "base", "--disk-gb", "2"], deps())
     assert IO.iodata_to_binary(msg) =~ "disk=2G"
@@ -526,6 +532,7 @@ defmodule VzBeam.Commands.NewTest do
     assert File.stat!(Path.join([home, "base", "disk.img"])).size == 4
   end
 
+  @tag :macos
   test "clone refuses a --disk-gb smaller than the base disk", %{home: home} do
     sparse!(Path.join([home, "base", "disk.img"]), 2 * @gb)
     assert {:error, 1, msg} = New.run(["dev", "base", "--disk-gb", "1"], deps())
@@ -533,6 +540,7 @@ defmodule VzBeam.Commands.NewTest do
     refute File.exists?(Path.join(home, "dev"))
   end
 
+  @tag :macos
   test "clone honors --cpu and --mem-gb overrides", %{home: home} do
     assert {:ok, msg} = New.run(["dev", "base", "--cpu", "8", "--mem-gb", "16"], deps())
     assert IO.iodata_to_binary(msg) =~ "cpu=8 mem=16G"

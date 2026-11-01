@@ -123,6 +123,7 @@ defmodule VzBeam.CacheTest do
     assert File.exists?(Path.join(Cache.dir(), "OLD.ipsw.99.pending"))
   end
 
+  @tag :macos
   test "ensure creates the cache dir before copying (real cp -c)" do
     src = Path.join(System.tmp_dir!(), "vzb-src-#{System.unique_integer([:positive])}.ipsw")
     File.write!(src, "ipsw-bytes")
