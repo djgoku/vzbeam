@@ -82,17 +82,17 @@ checksum = "sha256:9787df8c22a59c9a70d3e5a10db9ad663485e75e9ccc3f09bd092cb7b95e0
 url = "https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-16.2.0-h934c35e_7.conda"
 checksum = "sha256:fa7018298629fc429971fffd6ecba3d27a7b02e4e890d6a93ea01ffebe8cb745"
 
-[conda-packages.macos-arm64."libcxx-23.1.2-h55c6f16_0"]
-url = "https://conda.anaconda.org/conda-forge/osx-arm64/libcxx-23.1.2-h55c6f16_0.conda"
-checksum = "sha256:087a610bacee7901d259ef72c6f060d795ab26831bd7541ba75ced786a5a63f9"
+[conda-packages.macos-arm64."libcxx-23.1.6-hc645fd0_0"]
+url = "https://conda.anaconda.org/conda-forge/osx-arm64/libcxx-23.1.6-hc645fd0_0.conda"
+checksum = "sha256:822b2a88313977594230b7be745324e4c50293a35cf9244bb19ecc9c2c385288"
 
 [conda-packages.macos-arm64."liblzma-5.8.3-h8088a28_1"]
 url = "https://conda.anaconda.org/conda-forge/osx-arm64/liblzma-5.8.3-h8088a28_1.conda"
 checksum = "sha256:23d0630046a3e8b164d8f80f2b74ed2605af2e7050ab9913018056402fae4311"
 
-[conda-packages.macos-x64."libcxx-23.1.2-h19cb2f5_0"]
-url = "https://conda.anaconda.org/conda-forge/osx-64/libcxx-23.1.2-h19cb2f5_0.conda"
-checksum = "sha256:0ad8c788c3681674f100820cf5e76fcc8ec88502e7aa64f4776581985009a7be"
+[conda-packages.macos-x64."libcxx-23.1.6-h88b51c2_0"]
+url = "https://conda.anaconda.org/conda-forge/osx-64/libcxx-23.1.6-h88b51c2_0.conda"
+checksum = "sha256:a3c8011337fb36e3972152a2d18eaea0923dc4a67868f76c46792da7fbcb82f2"
 
 [conda-packages.macos-x64."liblzma-5.8.3-hbb4bfdb_1"]
 url = "https://conda.anaconda.org/conda-forge/osx-64/liblzma-5.8.3-hbb4bfdb_1.conda"
@@ -106,6 +106,10 @@ checksum = "sha256:d636d1a25234063642f9c531a7bb58d84c1c496411280a36ea000bd122f07
 url = "https://conda.anaconda.org/conda-forge/win-64/ucrt-10.0.26100.0-h57928b3_0.conda"
 checksum = "sha256:3005729dce6f3d3f5ec91dfc49fc75a0095f9cd23bab49efb899657297ac91a5"
 
+[conda-packages.windows-x64."vc-14.5-h17caf24_45"]
+url = "https://conda.anaconda.org/conda-forge/win-64/vc-14.5-h17caf24_45.conda"
+checksum = "sha256:e83597d881e95543a990396fb619a622c722f05e1e3c3371d248c74950659233"
+
 [conda-packages.windows-x64."vc-14.5-ha367084_41"]
 url = "https://conda.anaconda.org/conda-forge/win-64/vc-14.5-ha367084_41.conda"
 checksum = "sha256:35444c55a92e2f7f7ba26bc70f81e56e52344f7d064c0fd4b40a46a58517b79c"
@@ -114,12 +118,20 @@ checksum = "sha256:35444c55a92e2f7f7ba26bc70f81e56e52344f7d064c0fd4b40a46a58517b
 url = "https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36247-habf1de7_41.conda"
 checksum = "sha256:4e4cb599cdc41bf2109d1464c127b5bcbddf548ce3e322e612afb691338b48f8"
 
+[conda-packages.windows-x64."vc14_runtime-14.52.37029-hfcedb63_45"]
+url = "https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.52.37029-hfcedb63_45.conda"
+checksum = "sha256:fc56758530ae98573f0caf9a1270a4e2c77f3c53a2662bac5a6ccd0998f5c94b"
+
 [conda-packages.windows-x64."vcomp14-14.51.36247-habf1de7_41"]
 url = "https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda"
 checksum = "sha256:731e043390c9457299484d39e427221fc868a9249540a498a5a4f6456c7744d1"
 
+[conda-packages.windows-x64."vcomp14-14.52.37029-h54d7a3b_45"]
+url = "https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.52.37029-h54d7a3b_45.conda"
+checksum = "sha256:8307d1893da5f6b56bac3c8068e775c08875f3569a97ab9219d33eb3c4015d36"
+
 [[tools."conda:7zip"]]
-version = "26.03"
+version = "26.06"
 backend = "conda:7zip"
 specifiers = ["latest"]
 
@@ -127,8 +139,8 @@ specifiers = ["latest"]
 channel = "conda-forge"
 
 [tools."conda:7zip"."platforms.linux-arm64"]
-checksum = "sha256:0e78ca245fd54dd4c5701f62827ced3123ddc495a8c5c39817e979adcf4516c4"
-url = "https://conda.anaconda.org/conda-forge/linux-aarch64/7zip-26.03-h45ce4d5_0.conda"
+checksum = "sha256:e3c154fd9b1351bdd3e0ee5e1a392ff633ba61397f7139faed4cf7debcd28419"
+url = "https://conda.anaconda.org/conda-forge/linux-aarch64/7zip-26.06-h45ce4d5_0.conda"
 conda_deps = [
     "libstdcxx-16.2.0-hef695bb_7",
     "libgcc-16.2.0-h205dda4_7",
@@ -137,8 +149,8 @@ conda_deps = [
 ]
 
 [tools."conda:7zip"."platforms.linux-arm64-musl"]
-checksum = "sha256:0e78ca245fd54dd4c5701f62827ced3123ddc495a8c5c39817e979adcf4516c4"
-url = "https://conda.anaconda.org/conda-forge/linux-aarch64/7zip-26.03-h45ce4d5_0.conda"
+checksum = "sha256:e3c154fd9b1351bdd3e0ee5e1a392ff633ba61397f7139faed4cf7debcd28419"
+url = "https://conda.anaconda.org/conda-forge/linux-aarch64/7zip-26.06-h45ce4d5_0.conda"
 conda_deps = [
     "libstdcxx-16.2.0-hef695bb_7",
     "libgcc-16.2.0-h205dda4_7",
@@ -147,8 +159,8 @@ conda_deps = [
 ]
 
 [tools."conda:7zip"."platforms.linux-x64"]
-checksum = "sha256:e09b35d799977cfc7af08b8327bb0410238cdd96559cc686c42310a6a30c7910"
-url = "https://conda.anaconda.org/conda-forge/linux-64/7zip-26.03-h4dbf13b_0.conda"
+checksum = "sha256:baf9d45d66158ece85bf23c7043e62456d49270e095ec324c1029f74e8d16b4f"
+url = "https://conda.anaconda.org/conda-forge/linux-64/7zip-26.06-h4dbf13b_0.conda"
 conda_deps = [
     "libstdcxx-16.2.0-h934c35e_7",
     "libgcc-16.2.0-ha9f2e26_7",
@@ -157,8 +169,8 @@ conda_deps = [
 ]
 
 [tools."conda:7zip"."platforms.linux-x64-musl"]
-checksum = "sha256:e09b35d799977cfc7af08b8327bb0410238cdd96559cc686c42310a6a30c7910"
-url = "https://conda.anaconda.org/conda-forge/linux-64/7zip-26.03-h4dbf13b_0.conda"
+checksum = "sha256:baf9d45d66158ece85bf23c7043e62456d49270e095ec324c1029f74e8d16b4f"
+url = "https://conda.anaconda.org/conda-forge/linux-64/7zip-26.06-h4dbf13b_0.conda"
 conda_deps = [
     "libstdcxx-16.2.0-h934c35e_7",
     "libgcc-16.2.0-ha9f2e26_7",
@@ -167,14 +179,24 @@ conda_deps = [
 ]
 
 [tools."conda:7zip"."platforms.macos-arm64"]
-checksum = "sha256:d52e121dc0eeb59acff7dbb9be0b167ee2ce9dd7408c1e171876d78c2d811d08"
-url = "https://conda.anaconda.org/conda-forge/osx-arm64/7zip-26.03-hfbe1efa_0.conda"
-conda_deps = ["libcxx-23.1.2-h55c6f16_0"]
+checksum = "sha256:e3ff8ce4da78e9731a6ac2f638bd8cb05e2c2ddbe67d80c5dbe5884448d33ff5"
+url = "https://conda.anaconda.org/conda-forge/osx-arm64/7zip-26.06-he80e296_0.conda"
+conda_deps = ["libcxx-23.1.6-hc645fd0_0"]
 
 [tools."conda:7zip"."platforms.macos-x64"]
-checksum = "sha256:2b4f990003eb0f3b3ee6d28ff12d9c70a8044152ed029da480afc18e29137e4e"
-url = "https://conda.anaconda.org/conda-forge/osx-64/7zip-26.03-h66869c8_0.conda"
-conda_deps = ["libcxx-23.1.2-h19cb2f5_0"]
+checksum = "sha256:93da062ecd952b574e06f3c46633e1b6464d92ddbc1804e6606bb49ddb87c3d9"
+url = "https://conda.anaconda.org/conda-forge/osx-64/7zip-26.06-h41675c4_0.conda"
+conda_deps = ["libcxx-23.1.6-h88b51c2_0"]
+
+[tools."conda:7zip"."platforms.windows-x64"]
+checksum = "sha256:e5817ccaf18013bc5c53bad1c890e43af18a486a7da83ae3f3664247ca19d597"
+url = "https://conda.anaconda.org/conda-forge/win-64/7zip-26.06-h477610d_0.conda"
+conda_deps = [
+    "vc-14.5-h17caf24_45",
+    "vc14_runtime-14.52.37029-hfcedb63_45",
+    "vcomp14-14.52.37029-h54d7a3b_45",
+    "ucrt-10.0.26100.0-h57928b3_0",
+]
 
 [[tools."conda:xz-tools"]]
 version = "5.8.3"
@@ -246,63 +268,40 @@ conda_deps = [
 ]
 
 [[tools.elixir]]
-version = "1.20.4-otp-29"
+version = "1.20.5-otp-29"
 backend = "core:elixir"
-specifiers = ["1.20.4-otp-29"]
+specifiers = ["1.20.5-otp-29"]
 
 [tools.elixir."platforms.linux-arm64"]
-checksum = "sha256:7863c546cda13fecc949e562e326042451dacf8fd8698a36783cb71eeb223b46"
-url = "https://builds.hex.pm/builds/elixir/v1.20.4-otp-29.zip"
+checksum = "blake3:b64530100757d9602b54c0826f5938732b2b8fc5fe45a20962881d792db9e879"
+url = "https://builds.hex.pm/builds/elixir/v1.20.5-otp-29.zip"
 
 [tools.elixir."platforms.linux-arm64-musl"]
-checksum = "sha256:7863c546cda13fecc949e562e326042451dacf8fd8698a36783cb71eeb223b46"
-url = "https://builds.hex.pm/builds/elixir/v1.20.4-otp-29.zip"
+checksum = "sha256:f424d6f0bb710a1d4898f2645d8ad6cab3f5eab8d71848c0dda2579d3a8e8a06"
+url = "https://builds.hex.pm/builds/elixir/v1.20.5-otp-29.zip"
 
 [tools.elixir."platforms.linux-x64"]
-checksum = "sha256:7863c546cda13fecc949e562e326042451dacf8fd8698a36783cb71eeb223b46"
-url = "https://builds.hex.pm/builds/elixir/v1.20.4-otp-29.zip"
+checksum = "sha256:f424d6f0bb710a1d4898f2645d8ad6cab3f5eab8d71848c0dda2579d3a8e8a06"
+url = "https://builds.hex.pm/builds/elixir/v1.20.5-otp-29.zip"
 
 [tools.elixir."platforms.linux-x64-musl"]
-checksum = "sha256:7863c546cda13fecc949e562e326042451dacf8fd8698a36783cb71eeb223b46"
-url = "https://builds.hex.pm/builds/elixir/v1.20.4-otp-29.zip"
+checksum = "sha256:f424d6f0bb710a1d4898f2645d8ad6cab3f5eab8d71848c0dda2579d3a8e8a06"
+url = "https://builds.hex.pm/builds/elixir/v1.20.5-otp-29.zip"
 
 [tools.elixir."platforms.macos-arm64"]
-checksum = "sha256:7863c546cda13fecc949e562e326042451dacf8fd8698a36783cb71eeb223b46"
-url = "https://builds.hex.pm/builds/elixir/v1.20.4-otp-29.zip"
+checksum = "sha256:f424d6f0bb710a1d4898f2645d8ad6cab3f5eab8d71848c0dda2579d3a8e8a06"
+url = "https://builds.hex.pm/builds/elixir/v1.20.5-otp-29.zip"
 
 [tools.elixir."platforms.macos-x64"]
-checksum = "sha256:7863c546cda13fecc949e562e326042451dacf8fd8698a36783cb71eeb223b46"
-url = "https://builds.hex.pm/builds/elixir/v1.20.4-otp-29.zip"
+checksum = "sha256:f424d6f0bb710a1d4898f2645d8ad6cab3f5eab8d71848c0dda2579d3a8e8a06"
+url = "https://builds.hex.pm/builds/elixir/v1.20.5-otp-29.zip"
+
+[tools.elixir."platforms.windows-x64"]
+checksum = "sha256:f424d6f0bb710a1d4898f2645d8ad6cab3f5eab8d71848c0dda2579d3a8e8a06"
+url = "https://builds.hex.pm/builds/elixir/v1.20.5-otp-29.zip"
 
 [[tools.erlang]]
-version = "29.1.1"
-backend = "core:erlang"
-specifiers = ["29"]
-
-[tools.erlang."platforms.linux-arm64-musl"]
-checksum = "sha256:054e0143e39c780e091107fc9b345792a9c1a55f6bac1eca1c1101510fc06bf6"
-url = "https://github.com/erlang/otp/releases/download/OTP-29.1.1/otp_src_29.1.1.tar.gz"
-url_api = "https://api.github.com/repos/erlang/otp/releases/assets/581114879"
-install = "source"
-
-[tools.erlang."platforms.linux-x64-musl"]
-checksum = "sha256:054e0143e39c780e091107fc9b345792a9c1a55f6bac1eca1c1101510fc06bf6"
-url = "https://github.com/erlang/otp/releases/download/OTP-29.1.1/otp_src_29.1.1.tar.gz"
-url_api = "https://api.github.com/repos/erlang/otp/releases/assets/581114879"
-install = "source"
-
-[tools.erlang."platforms.macos-arm64"]
-checksum = "sha256:0e80f209b06d9d13cf3b5f7c07228d9561aff983e6e55ea9c8ebda085db286cc"
-url = "https://github.com/erlef/otp_builds/releases/download/OTP-29.1.1/otp-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/erlef/otp_builds/releases/assets/580922715"
-
-[tools.erlang."platforms.macos-x64"]
-checksum = "sha256:474373887e7a3395bbe033353be74113a59cfc9f3d1565ca740972c3b7c02aa0"
-url = "https://github.com/erlef/otp_builds/releases/download/OTP-29.1.1/otp-x86_64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/erlef/otp_builds/releases/assets/580936007"
-
-[[tools.erlang]]
-version = "29.1.1"
+version = "29.1.3"
 backend = "core:erlang"
 specifiers = ["29"]
 
@@ -310,98 +309,149 @@ specifiers = ["29"]
 precompiled_os = "ubuntu-24.04"
 
 [tools.erlang."platforms.linux-arm64"]
-checksum = "sha256:734946b92e9caf9866c2ee841f1d987cfa625cbee051a87ba4f3eaa8cab0fc7f"
-url = "https://builds.hex.pm/builds/otp/arm64/ubuntu-24.04/OTP-29.1.1.tar.gz"
+checksum = "sha256:92f62a6f1404fac2d33fb121eaa5cd1713a1d74c21be238a94c76e9b3db65f6e"
+url = "https://builds.hex.pm/builds/otp/arm64/ubuntu-24.04/OTP-29.1.3.tar.gz"
 
 [tools.erlang."platforms.linux-x64"]
-checksum = "sha256:35186bdae840028df621d14f3a75c68eb52eea90fabd500f7946a5d74bdaf11b"
-url = "https://builds.hex.pm/builds/otp/amd64/ubuntu-24.04/OTP-29.1.1.tar.gz"
+checksum = "sha256:1436e790ad4d3d0e8737c3f81010df48460be8bb981b24395ffdb50eb2bdf322"
+url = "https://builds.hex.pm/builds/otp/amd64/ubuntu-24.04/OTP-29.1.3.tar.gz"
+
+[[tools.erlang]]
+version = "29.1.3"
+backend = "core:erlang"
+specifiers = ["29"]
+
+[tools.erlang."platforms.linux-arm64-musl"]
+checksum = "sha256:44d8ee7f0964537ddb328fe2f6307d3338c3fdd1b2826938d490907771ba70d2"
+url = "https://github.com/erlang/otp/releases/download/OTP-29.1.3/otp_src_29.1.3.tar.gz"
+url_api = "https://api.github.com/repos/erlang/otp/releases/assets/787474544"
+install = "source"
+
+[tools.erlang."platforms.linux-x64-musl"]
+checksum = "sha256:44d8ee7f0964537ddb328fe2f6307d3338c3fdd1b2826938d490907771ba70d2"
+url = "https://github.com/erlang/otp/releases/download/OTP-29.1.3/otp_src_29.1.3.tar.gz"
+url_api = "https://api.github.com/repos/erlang/otp/releases/assets/787474544"
+install = "source"
+
+[tools.erlang."platforms.macos-arm64"]
+checksum = "sha256:fedfd0ef48f3290cf144a0a20d77fb840e95b934073d2378d60f1fad7c91a837"
+url = "https://github.com/erlef/otp_builds/releases/download/OTP-29.1.3/otp-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/erlef/otp_builds/releases/assets/787066834"
+
+[tools.erlang."platforms.macos-x64"]
+checksum = "sha256:57be7830b29cdbbcecda8fced4d818803a1c88bf8f74c882049d31fcb84edb64"
+url = "https://github.com/erlef/otp_builds/releases/download/OTP-29.1.3/otp-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/erlef/otp_builds/releases/assets/787082477"
+
+[tools.erlang."platforms.windows-x64"]
+checksum = "sha256:b47fa07264ef4d2847d20c76568c240dfe0970f5d52099d9615d3a4f6a4482b2"
+url = "https://github.com/erlang/otp/releases/download/OTP-29.1.3/otp_win64_29.1.3.zip"
+url_api = "https://api.github.com/repos/erlang/otp/releases/assets/787360105"
 
 [[tools.packslip]]
-version = "1.3.0"
+version = "1.11.5"
 backend = "packslip:packslip.dev"
 specifiers = ["1"]
 
 [tools.packslip."platforms.linux-arm64"]
-checksum = "sha256:bd939d3c224c0b75d23bc6cdd6fe40e050b7eec6c08a6d565c58803fd8984cc6"
-url = "https://packslip.dev/v1.3.0/packslip-v1.3.0-linux-arm64.tar.xz"
+checksum = "sha256:22542a0243235de8edcdceb5e13dc56dd3351efd382cdbc6555f13f7ae9d6493"
+url = "https://packslip.dev/v1.11.5/packslip-v1.11.5-linux-arm64.tar.xz"
+signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"
+
+[tools.packslip."platforms.linux-arm64-musl"]
+checksum = "sha256:22542a0243235de8edcdceb5e13dc56dd3351efd382cdbc6555f13f7ae9d6493"
+url = "https://packslip.dev/v1.11.5/packslip-v1.11.5-linux-arm64.tar.xz"
 signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"
 
 [tools.packslip."platforms.linux-x64"]
-checksum = "sha256:0f6bcbd108261a6a5ae8ffd9cdbce1deb8c40cd318d65026cbf5ced47a8ffd26"
-url = "https://packslip.dev/v1.3.0/packslip-v1.3.0-linux-x64.tar.xz"
+checksum = "sha256:8f69db2646f31a59ccbee65ffd907bd5d0fb7edca772fcdb416d69359ce8630f"
+url = "https://packslip.dev/v1.11.5/packslip-v1.11.5-linux-x64.tar.xz"
+signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"
+
+[tools.packslip."platforms.linux-x64-musl"]
+checksum = "sha256:8f69db2646f31a59ccbee65ffd907bd5d0fb7edca772fcdb416d69359ce8630f"
+url = "https://packslip.dev/v1.11.5/packslip-v1.11.5-linux-x64.tar.xz"
 signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"
 
 [tools.packslip."platforms.macos-arm64"]
-checksum = "sha256:669f0c1b094b239c041490b079e9c03276656abd1ceb089c98da98c423ca02c9"
-url = "https://packslip.dev/v1.3.0/packslip-v1.3.0-darwin-arm64.tar.xz"
+checksum = "sha256:ec9f6b799030f5db24429f8e467a9fc3ed246097262ca9390feca93075b91123"
+url = "https://packslip.dev/v1.11.5/packslip-v1.11.5-darwin-arm64.tar.xz"
+signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"
+
+[tools.packslip."platforms.windows-x64"]
+checksum = "sha256:3f5bea7efdee93b1ae0aa7e603f5c2f3523b00b0e55db456f6391cc8069f77e8"
+url = "https://packslip.dev/v1.11.5/packslip-v1.11.5-windows-x64.zip"
 signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"
 
 [[tools.python]]
-version = "3.14.7"
+version = "3.15.2"
 backend = "core:python"
 specifiers = ["latest"]
 
 [tools.python."platforms.linux-arm64"]
-checksum = "sha256:8a0798baa8a2c27b5751d590aced543eaa85e20b3f73d93c1af049688acdc9c5"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7+20260901-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
+checksum = "blake3:6b4f7def368273573dd424f08c4267427e48a3f523d29c82281b15c2b21da40a"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.15.2+20261124-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.linux-arm64-musl"]
-checksum = "sha256:701c31d72187242302922a29f3bc6023ceb68b6b68fb8d4ed7568d1e6ef34548"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7+20260901-aarch64-unknown-linux-musl-install_only_stripped.tar.gz"
+checksum = "sha256:64786e91bbd687c003c3e6b3dc4a616bc379164dd923f3b38745af650df1eca6"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.15.2+20261124-aarch64-unknown-linux-musl-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.linux-x64"]
-checksum = "sha256:3959f92825141e04adf44982d3a83ee57af0877e893b0796e04c1468749d9b04"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7+20260901-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+checksum = "sha256:d94bcba1ca1c63f591fa63109c3eeaacc76ee6796844ac7bdf2ae10715646f05"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.15.2+20261124-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.linux-x64-musl"]
-checksum = "sha256:c773f8a7357c0d1a29e208a14bc16386731ca9c0d2e51f1b6741967fb0632cdc"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7+20260901-x86_64-unknown-linux-musl-install_only_stripped.tar.gz"
+checksum = "sha256:2f3a1407f26d14938b592de39195e0de78de501268beac14dbc8be3b14b9c6e4"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.15.2+20261124-x86_64-unknown-linux-musl-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.macos-arm64"]
-checksum = "sha256:4632cb1a6edad9e73d3c81b6d2e69131637d995173e3e85005df14102b0592ba"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7+20260901-aarch64-apple-darwin-install_only_stripped.tar.gz"
+checksum = "sha256:2cc8874f034f7a0deff879530020108ebe6d318f5e8c6689673a866ab5fb7fdc"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.15.2+20261124-aarch64-apple-darwin-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.macos-x64"]
-checksum = "sha256:7e151a7c9028855b61a7d6e78381f2020a1ef185281399f3b1aafc5e1c9a1a64"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7+20260901-x86_64-apple-darwin-install_only_stripped.tar.gz"
+checksum = "sha256:f076837c5fb804e6f200841c3be3b2050633f7e19ea97934f81fd9727ada6b71"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.15.2+20261124-x86_64-apple-darwin-install_only_stripped.tar.gz"
+provenance = "github-attestations"
+
+[tools.python."platforms.windows-x64"]
+checksum = "sha256:547cdbb844edc425b235513fdf0267f64e8e59c8f484527bb7ef92d3aad91dd9"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.15.2+20261124-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [[tools.zig]]
-version = "0.16.0"
+version = "0.17.1"
 backend = "core:zig"
-specifiers = ["0.16.0"]
+specifiers = ["0.17.1"]
 
 [tools.zig."platforms.linux-arm64"]
-checksum = "sha256:ea4b09bfb22ec6f6c6ceac57ab63efb6b46e17ab08d21f69f3a48b38e1534f17"
-url = "https://ziglang.org/download/0.16.0/zig-aarch64-linux-0.16.0.tar.xz"
+checksum = "sha256:a1546d5646eb184437918d6635ca6b762a0e889eac09cef720ee7a1ed3fe7795"
+url = "https://ziglang.org/download/0.17.1/zig-aarch64-linux-0.17.1.tar.xz"
 
 [tools.zig."platforms.linux-arm64-musl"]
-checksum = "sha256:ea4b09bfb22ec6f6c6ceac57ab63efb6b46e17ab08d21f69f3a48b38e1534f17"
-url = "https://ziglang.org/download/0.16.0/zig-aarch64-linux-0.16.0.tar.xz"
+checksum = "sha256:a1546d5646eb184437918d6635ca6b762a0e889eac09cef720ee7a1ed3fe7795"
+url = "https://ziglang.org/download/0.17.1/zig-aarch64-linux-0.17.1.tar.xz"
 
 [tools.zig."platforms.linux-x64"]
-checksum = "sha256:70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00"
-url = "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
+checksum = "sha256:3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a"
+url = "https://ziglang.org/download/0.17.1/zig-x86_64-linux-0.17.1.tar.xz"
 
 [tools.zig."platforms.linux-x64-musl"]
-checksum = "sha256:70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00"
-url = "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
+checksum = "sha256:3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a"
+url = "https://ziglang.org/download/0.17.1/zig-x86_64-linux-0.17.1.tar.xz"
 
 [tools.zig."platforms.macos-arm64"]
-checksum = "sha256:b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489"
-url = "https://ziglang.org/download/0.16.0/zig-aarch64-macos-0.16.0.tar.xz"
-provenance = "minisign"
+checksum = "sha256:75f1bc7a1e9852f17ec9a0c1895f767c4ec56d46bc8a834920eece1d0359dd8d"
+url = "https://ziglang.org/download/0.17.1/zig-aarch64-macos-0.17.1.tar.xz"
 
 [tools.zig."platforms.macos-x64"]
-checksum = "sha256:0387557ed1877bc6a2e1802c8391953baddba76081876301c522f52977b52ba7"
-url = "https://ziglang.org/download/0.16.0/zig-x86_64-macos-0.16.0.tar.xz"
+checksum = "sha256:9af07b20319fbd0c92ee46ad23e81d6a782b1aaea2cfb8dcbff35f1d2c7ddbb7"
+url = "https://ziglang.org/download/0.17.1/zig-x86_64-macos-0.17.1.tar.xz"
 
 [tools.zig."platforms.windows-x64"]
-checksum = "sha256:68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf337bc3684a75a7e"
-url = "https://ziglang.org/download/0.16.0/zig-x86_64-windows-0.16.0.zip"
+checksum = "sha256:b03f477a1943673e02aca0f570e8030dffd536ce1f45cbc4d3326ec31159562e"
+url = "https://ziglang.org/download/0.17.1/zig-x86_64-windows-0.17.1.zip"
